@@ -117,14 +117,14 @@ defmodule OEIS.IntegrationTest do
     assert Enum.any?(references, fn ref -> String.contains?(ref, "L. Comtet") end)
   end
 
-  test "fetch_linked_data successfully fetches and parses b-file data for A000001" do
+  test "fetch_extra_data successfully fetches and parses extra data for A000001" do
     {:single, sequence} = OEIS.search("A000001")
 
-    assert {:ok, [%{title: "Table of n, a(n) for n = 0..2047", data: a000001_data} | _]} =
-             OEIS.fetch_linked_data(sequence)
+    assert {:extra_data, a000001_data} =
+             OEIS.fetch_extra_data(sequence)
 
     assert is_list(a000001_data)
-    # A000001 has at least 10 entries in its b-file
+    # A000001 has at least 10 entries in its extra data
     assert length(a000001_data) >= 10
     # First value for A000001 is 0
     assert Enum.at(a000001_data, 0) == 0
@@ -132,16 +132,16 @@ defmodule OEIS.IntegrationTest do
     assert Enum.at(a000001_data, 1) == 1
   end
 
-  test "fetch_linked_data returns no_links_found for a sequence without b-file links (A360000)" do
+  test "fetch_extra_data returns no_links_found for a sequence without extra data links (A360000)" do
     {:single, sequence} = OEIS.search("A360000")
 
-    assert {:no_links_found, "No b-file links found for this sequence."} =
-             OEIS.fetch_linked_data(sequence)
+    assert {:no_links_found, "No extra data link found for this sequence."} =
+             OEIS.fetch_extra_data(sequence)
   end
 
-  test "fetch_linked_data returns error for invalid input type" do
+  test "fetch_extra_data returns error for invalid input type" do
     assert {:error, "Input must be an OEIS.Sequence struct."} =
-             OEIS.fetch_linked_data("not a sequence")
+             OEIS.fetch_extra_data("not a sequence")
   end
 
   test "search with invalid input type returns a bad_param error" do

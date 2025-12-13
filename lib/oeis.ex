@@ -8,6 +8,17 @@ defmodule OEIS do
 
   @base_url "https://oeis.org"
 
+  @string_fields [
+    :keyword,
+    :comment,
+    :ref,
+    :link,
+    :formula,
+    :example,
+    :name,
+    :xref
+  ]
+
   @doc """
   Searches the OEIS database.
 
@@ -89,15 +100,17 @@ defmodule OEIS do
   end
 
   @doc """
-  Fetches and parses additional sequence data from linked `.txt` files associated with an OEIS sequence.
+  Fetches and parses extra data associated with an OEIS sequence, returning extracted data.
 
-  This function takes an `OEIS.Sequence` struct, identifies links pointing to
-  `oeis.org/.../b<A-number>.txt` files, fetches their content, and extracts
+  This function takes an `OEIS.Sequence` struct, identifies the single link pointing to
+  an `oeis.org/.../b<A-number>.txt` file (which contains the extra data), fetches its content, and extracts
   the integer values from the second column of each line. The leading index column
   in these `.txt` files is ignored.
 
-  Returns `{:ok, list_of_maps}` on success, where `list_of_maps` is a list of maps. Each map contains a `:title` (string) and `:data` (list of integers) extracted from the linked b-file.
-  Returns `{:no_links_found, message}` if no relevant links are found in the sequence.
+  Returns `{:extra_data, data}` on success, where `data` is a list of integers extracted
+  from the linked extra data.
+  Returns `{:no_links_found, message}` if no relevant extra data link is found in the sequence.
+  Returns `{:no_match, message}` if an extra data link is found but no integer data can be extracted.
   Returns `{:error, reason}` if any HTTP request or parsing operation fails.
 
   ## Parameters
@@ -106,69 +119,61 @@ defmodule OEIS do
   ## Examples
       iex> OEIS.search("A000001")
       ...> |> case do
-      ...>   {:single, seq} -> OEIS.fetch_linked_data(seq)
+      ...>   {:single, seq} -> OEIS.fetch_extra_data(seq)
       ...>   _ -> {:error, "Sequence not found"}
       ...> end
-      {:ok, [%{title: "Table of n, a(n) for n = 0..2047", data: [0, 1, 1, 2, 1, 2, 2, 1, 5, 2, 2, ...]} | _]} # Example shortened
+      {:extra_data, [0, 1, 1, 2, 1, 2, 2, 1, 5, 2, 2, ...]} # Example shortened
   """
-  def fetch_linked_data(%Sequence{link: links}) do
-    b_file_links =
-      Enum.filter(links, fn
-        %{extra_data: true} -> true
-        # Filter out links without extra_data: true
-        _ -> false
-      end)
+  def fetch_extra_data(%Sequence{link: links}) do
+    case Enum.find(links, &Map.get(&1, :extra_data, false)) do
+      nil ->
+        {:no_links_found, "No extra data link found for this sequence."}
 
-    case b_file_links do
-      [] ->
-        {:no_links_found, "No b-file links found for this sequence."}
-
-      _ ->
-        fetched_data = Enum.flat_map(b_file_links, &fetch_and_process_link/1)
-        process_fetched_data(fetched_data)
+      %{url: url, text: title} = link ->
+        process_b_file_link(link, url, title)
     end
   end
 
-  def fetch_linked_data(_other) do
+  def fetch_extra_data(_other) do
     {:error, "Input must be an OEIS.Sequence struct."}
   end
 
-  defp process_fetched_data(fetched_data) do
-    case fetched_data do
-      [] -> {:no_match, "No integer data extracted from b-file links."}
-      _ -> {:ok, fetched_data}
+  defp process_b_file_link(%{url: url, text: title}, _url, _title) do
+    case fetch_and_parse_extra_data(url) do
+      {:ok, data} ->
+        case data do
+          [] -> {:no_match, "No integer data extracted from extra data for link: #{title}"}
+          # <--- Modified
+          _ -> {:extra_data, data}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
-  defp fetch_and_process_link(%{url: url, text: title}) do
-    case fetch_and_parse_b_file(url) do
-      {:ok, data} -> [%{title: title, data: data}]
-      # Silently drop links that fail to fetch or parse for now
-      _error -> []
-    end
-  end
-
-  defp fetch_and_parse_b_file(url) do
+  defp fetch_and_parse_extra_data(url) do
     case Req.get(url) do
       {:ok, %{status: 200, body: body}} ->
-        parse_b_file_content(body)
+        parse_extra_data_content(body)
 
       {:ok, %{status: status, body: body}} ->
         {:error,
-         {:http_error, "Failed to fetch b-file from #{url}: HTTP #{status} - #{inspect(body)}"}}
+         {:http_error,
+          "Failed to fetch extra data from #{url}: HTTP #{status} - #{inspect(body)}"}}
 
       {:error, reason} ->
-        {:error, {:http_error, "Failed to fetch b-file from #{url}: #{inspect(reason)}"}}
+        {:error, {:http_error, "Failed to fetch extra data from #{url}: #{inspect(reason)}"}}
     end
   end
 
-  defp parse_b_file_content(content) when is_binary(content) do
+  defp parse_extra_data_content(content) when is_binary(content) do
     lines = String.split(content, ~r/\r?\n/, trim: true)
-    extracted_integers = Enum.flat_map(lines, &parse_b_file_line/1)
+    extracted_integers = Enum.flat_map(lines, &parse_extra_data_line/1)
     {:ok, extracted_integers}
   end
 
-  defp parse_b_file_line(line) do
+  defp parse_extra_data_line(line) do
     case String.split(line, ~r/\s+/, trim: true) do
       [_, second_col_str | _] ->
         case Integer.parse(second_col_str) do
@@ -242,38 +247,43 @@ defmodule OEIS do
   end
 
   defp build_base_query_map(opts) do
-    terms =
-      with terms <- [] do
-        terms
-        |> add_sequence_term(Keyword.get(opts, :sequence))
-        |> add_id_term(Keyword.get(opts, :id))
-        |> add_keyword_term(Keyword.get(opts, :keyword))
-        |> add_author_term(Keyword.get(opts, :author))
-        |> add_general_query_term(Keyword.get(opts, :query))
-        |> add_comment_term(Keyword.get(opts, :comment))
-        |> add_ref_term(Keyword.get(opts, :ref))
-        |> add_link_term(Keyword.get(opts, :link))
-        |> add_formula_term(Keyword.get(opts, :formula))
-        |> add_example_term(Keyword.get(opts, :example))
-        |> add_name_term(Keyword.get(opts, :name))
-        |> add_xref_term(Keyword.get(opts, :xref))
-      end
+    do_build_query_terms(opts, {:ok, []})
+  end
 
-    case terms do
-      {:error, _} = err ->
-        err
+  defp do_build_query_terms([], {:ok, acc_terms}) do
+    case Enum.empty?(acc_terms) do
+      true ->
+        {:error,
+         {:bad_param,
+          "At least one of :sequence, :id, :keyword, :author, or :query must be provided."}}
 
-      terms when is_list(terms) ->
-        if Enum.empty?(terms) do
-          {:error,
-           {:bad_param,
-            "At least one of :sequence, :id, :keyword, :author, or :query must be provided."}}
-        else
-          q_value = Enum.join(terms, " ")
-          {:ok, %{q: q_value, fmt: "json"}}
+      false ->
+        q_value = Enum.join(acc_terms, " ")
+        {:ok, %{q: q_value, fmt: "json"}}
+    end
+  end
+
+  defp do_build_query_terms([{_key, nil} | tail], acc_status),
+    do: do_build_query_terms(tail, acc_status)
+
+  defp do_build_query_terms([head | tail], {:ok, acc_terms}) do
+    {key, value} = head
+
+    case key do
+      # <--- Skip :start
+      :start ->
+        do_build_query_terms(tail, {:ok, acc_terms})
+
+      _ ->
+        case add_query_term(acc_terms, key, value) do
+          {:ok, new_acc_terms} -> do_build_query_terms(tail, {:ok, new_acc_terms})
+          {:error, _} = err -> err
         end
     end
   end
+
+  defp do_build_query_terms([_head | _tail], {:error, _} = err), do: err
+  defp do_build_query_terms([], {:error, _} = err), do: err
 
   defp handle_start_param(query_map, nil), do: {:ok, query_map}
 
@@ -285,13 +295,26 @@ defmodule OEIS do
   defp handle_start_param(_query_map, _),
     do: {:error, {:bad_param, ":start must be a non-negative integer."}}
 
-  defp add_sequence_term({:error, _} = err, _), do: err
-  defp add_sequence_term(terms, nil), do: terms
+  defp parse_integer_string(sequence_str) do
+    integers_and_remains =
+      sequence_str
+      |> String.split(",", trim: true)
+      |> Enum.map(&String.trim/1)
+      |> Enum.map(&Integer.parse/1)
 
-  defp add_sequence_term(terms, sequence) when is_list(sequence) do
+    case Enum.all?(integers_and_remains, fn
+           {int, rest} when is_integer(int) and rest == "" -> true
+           _ -> false
+         end) do
+      true -> {:ok, Enum.map(integers_and_remains, fn {int, _rest} -> int end)}
+      false -> {:error, :not_an_integer_list_string}
+    end
+  end
+
+  defp add_query_term(acc_terms, :sequence, sequence) when is_list(sequence) do
     case Enum.all?(sequence, &is_integer/1) do
       true ->
-        [Enum.map_join(sequence, ",", &to_string/1) | terms]
+        {:ok, [Enum.map_join(sequence, ",", &to_string/1) | acc_terms]}
 
       false ->
         {:error,
@@ -300,116 +323,56 @@ defmodule OEIS do
     end
   end
 
-  defp add_sequence_term(terms, sequence) when is_binary(sequence) do
+  defp add_query_term(acc_terms, :sequence, sequence) when is_binary(sequence) do
     case parse_integer_string(sequence) do
-      {:ok, int_list} -> [Enum.join(int_list, ",") | terms]
+      {:ok, int_list} -> {:ok, [Enum.join(int_list, ",") | acc_terms]}
       _ -> {:error, {:bad_param, "Sequence string must be a comma-separated list of integers."}}
     end
   end
 
-  defp add_sequence_term(_, _),
+  defp add_query_term(_acc_terms, :sequence, _),
     do:
       {:error,
        {:bad_param,
         "Sequence must be a list of integers or a comma-separated string of integers."}}
 
-  defp parse_integer_string(sequence_str) do
-    result =
-      sequence_str
-      |> String.split(",", trim: true)
-      |> Enum.map(&String.trim/1)
-      |> Enum.map(&Integer.parse/1)
-
-    if Enum.all?(result, &match?({_val, ""}, &1)) do
-      {:ok, Enum.map(result, fn {val, ""} -> val end)}
-    else
-      {:error, :not_an_integer_list_string}
-    end
+  defp add_query_term(acc_terms, :id, <<"A", _id_num::binary-size(6)>> = id) do
+    {:ok, ["id:" <> id | acc_terms]}
   end
 
-  defp add_id_term({:error, _} = err, _), do: err
-  defp add_id_term(terms, nil), do: terms
-
-  defp add_id_term(terms, <<"A", _id_num::binary-size(6)>> = id) do
-    ["id:" <> id | terms]
-  end
-
-  defp add_id_term(_terms, _id),
+  defp add_query_term(_acc_terms, :id, _id),
     do:
       {:error,
        {:bad_param,
         "ID must be a string starting with 'A' and 7 characters long (e.g., 'A000001')."}}
 
-  defp add_keyword_term({:error, _} = err, _), do: err
-  defp add_keyword_term(terms, nil), do: terms
-
-  defp add_keyword_term(terms, keyword) when is_binary(keyword) do
-    ["keyword:" <> keyword | terms]
+  defp add_query_term(acc_terms, key, value) when key in @string_fields and is_binary(value) do
+    {:ok, ["#{Atom.to_string(key)}:" <> value | acc_terms]}
   end
 
-  defp add_keyword_term(_, _), do: {:error, {:bad_param, "Keyword must be a string."}}
-
-  defp add_author_term({:error, _} = err, _), do: err
-  defp add_author_term(terms, nil), do: terms
-
-  defp add_author_term(terms, author) when is_binary(author) do
-    ["author:*" <> author <> "*" | terms]
+  defp add_query_term(_acc_terms, key, _value) when key in @string_fields do
+    {:error, {:bad_param, "#{Atom.to_string(key)} must be a string."}}
   end
 
-  defp add_author_term(_, _), do: {:error, {:bad_param, "Author must be a string."}}
-
-  defp add_general_query_term({:error, _} = err, _), do: err
-  defp add_general_query_term(terms, nil), do: terms
-
-  defp add_general_query_term(terms, query_str) when is_binary(query_str) do
-    [query_str | terms]
+  defp add_query_term(acc_terms, :author, author) when is_binary(author) do
+    {:ok, ["author:*" <> author <> "*" | acc_terms]}
   end
 
-  defp add_general_query_term(_, _), do: {:error, {:bad_param, "General query must be a string."}}
+  defp add_query_term(_acc_terms, :author, _),
+    do: {:error, {:bad_param, "Author must be a string."}}
 
-  defp add_comment_term({:error, _} = err, _), do: err
-  defp add_comment_term(terms, nil), do: terms
+  defp add_query_term(acc_terms, :query, query_str) when is_binary(query_str) do
+    {:ok, [query_str | acc_terms]}
+  end
 
-  defp add_comment_term(terms, comment) when is_binary(comment),
-    do: ["comment:" <> comment | terms]
+  defp add_query_term(_acc_terms, :query, _),
+    do: {:error, {:bad_param, "General query must be a string."}}
 
-  defp add_comment_term(_, _), do: {:error, {:bad_param, "Comment must be a string."}}
+  # Catch-all for unsupported options
 
-  defp add_ref_term({:error, _} = err, _), do: err
-  defp add_ref_term(terms, nil), do: terms
-  defp add_ref_term(terms, ref) when is_binary(ref), do: ["ref:" <> ref | terms]
-  defp add_ref_term(_, _), do: {:error, {:bad_param, "Ref must be a string."}}
-
-  defp add_link_term({:error, _} = err, _), do: err
-  defp add_link_term(terms, nil), do: terms
-  defp add_link_term(terms, link) when is_binary(link), do: ["link:" <> link | terms]
-  defp add_link_term(_, _), do: {:error, {:bad_param, "Link must be a string."}}
-
-  defp add_formula_term({:error, _} = err, _), do: err
-  defp add_formula_term(terms, nil), do: terms
-
-  defp add_formula_term(terms, formula) when is_binary(formula),
-    do: ["formula:" <> formula | terms]
-
-  defp add_formula_term(_, _), do: {:error, {:bad_param, "Formula must be a string."}}
-
-  defp add_example_term({:error, _} = err, _), do: err
-  defp add_example_term(terms, nil), do: terms
-
-  defp add_example_term(terms, example) when is_binary(example),
-    do: ["example:" <> example | terms]
-
-  defp add_example_term(_, _), do: {:error, {:bad_param, "Example must be a string."}}
-
-  defp add_name_term({:error, _} = err, _), do: err
-  defp add_name_term(terms, nil), do: terms
-  defp add_name_term(terms, name) when is_binary(name), do: ["name:" <> name | terms]
-  defp add_name_term(_, _), do: {:error, {:bad_param, "Name must be a string."}}
-
-  defp add_xref_term({:error, _} = err, _), do: err
-  defp add_xref_term(terms, nil), do: terms
-  defp add_xref_term(terms, xref) when is_binary(xref), do: ["xref:" <> xref | terms]
-  defp add_xref_term(_, _), do: {:error, {:bad_param, "Xref must be a string."}}
+  defp add_query_term(_acc_terms, key, value),
+    do:
+      {:error, {:bad_param, "Unsupported option: #{inspect(key)} with value: #{inspect(value)}."}}
 
   defp make_request(url, query_params) do
     case Req.get(url, params: query_params) do
@@ -492,8 +455,14 @@ defmodule OEIS do
     references = Map.get(result, "reference", [])
 
     all_texts =
-      if(is_list(comments), do: comments, else: []) ++
-        if is_list(references), do: references, else: []
+      case comments do
+        list when is_list(list) -> list
+        _ -> []
+      end ++
+        case references do
+          list when is_list(list) -> list
+          _ -> []
+        end
 
     authors =
       Enum.flat_map(all_texts, fn text ->
@@ -505,10 +474,9 @@ defmodule OEIS do
       |> Enum.uniq()
       |> Enum.sort()
 
-    if Enum.empty?(authors) do
-      nil
-    else
-      Enum.join(authors, ", ")
+    case authors do
+      [] -> nil
+      _ -> Enum.join(authors, ", ")
     end
   end
 
