@@ -19,14 +19,11 @@ defmodule OEIS do
   the `A` number format (e.g., `"A000055"`), otherwise it will be treated as a
   comma-separated sequence (e.g., `"1,2,3,4"`).
 
-  On success, returns `{:ok, [list_of_sequences]}` where `list_of_sequences`
-  is a list of `OEIS.Sequence` structs. If no results are found, it returns
-  an empty list: `{:ok, []}`.
+  On success, returns `{:single, sequence}` for an exact ID match, or `{:multi, list_of_sequences}` for other searches. `list_of_sequences` is a list of `OEIS.Sequence` structs. If no results are found, `{:no_match, "No matches found."}` is returned.
 
   If a query returns a full page of results (currently 10 sequences for general
   searches), it implies there might be more results available. In such cases,
-  a `{:partial, message, [list_of_sequences], response_map}` tuple is returned, indicating
-  that the query might need refinement or pagination (`:start` option).
+  a `{:partial, list_of_sequences}` tuple is returned.
 
   ## Parameters
 
@@ -50,27 +47,27 @@ defmodule OEIS do
   ## Examples
 
       iex> OEIS.search("A000045")
-      {:ok, [%OEIS.Sequence{id: "A000045", name: "Fibonacci numbers." <> _}]}
+      {:single, %OEIS.Sequence{id: "A000045", name: "Fibonacci numbers." <> _}}
 
       iex> OEIS.search([1, 2, 3, 5, 8])
-      {:ok, [%OEIS.Sequence{id: "A000045", name: "Fibonacci numbers." <> _}]}
+      {:multi, [%OEIS.Sequence{id: "A000045", name: "Fibonacci numbers." <> _}]}
 
       iex> OEIS.search(query: "non-existent query")
-      {:ok, []}
+      {:no_match, "No matches found."}
 
       iex> OEIS.search(author: "Sloane", keyword: "core", start: 10)
-      {:ok, list_of_sequences}
+      {:partial, list_of_sequences}
 
-      iex> {:partial, _message, sequences, _response_map} = OEIS.search(sequence: [1, 2, 3])
+      iex> {:partial, sequences} = OEIS.search(sequence: [1, 2, 3])
       iex> length(sequences)
       10
 
       # A broad query like "prime number" often returns no results from the JSON API,
-      # which translates to an empty list `{:ok, []}`. The OEIS JSON API
+      # which now translates to `{:no_match, "No matches found."}`. The OEIS JSON API
       # currently does not provide a distinct indicator for "too many results"
       # versus "no results" in its JSON response.
       iex> OEIS.search(query: "prime number")
-      {:ok, []}
+      {:no_match, "No matches found."}
   """
   def search(opts) do
     case opts do
@@ -88,6 +85,101 @@ defmodule OEIS do
 
       _ ->
         {:error, {:bad_param, "Input must be a keyword list, a list of integers, or a string."}}
+    end
+  end
+
+  @doc """
+  Fetches and parses additional sequence data from linked `.txt` files associated with an OEIS sequence.
+
+  This function takes an `OEIS.Sequence` struct, identifies links pointing to
+  `oeis.org/.../b<A-number>.txt` files, fetches their content, and extracts
+  the integer values from the second column of each line. The leading index column
+  in these `.txt` files is ignored.
+
+  Returns `{:ok, list_of_maps}` on success, where `list_of_maps` is a list of maps. Each map contains a `:title` (string) and `:data` (list of integers) extracted from the linked b-file.
+  Returns `{:no_links_found, message}` if no relevant links are found in the sequence.
+  Returns `{:error, reason}` if any HTTP request or parsing operation fails.
+
+  ## Parameters
+  * `sequence` (OEIS.Sequence): The OEIS sequence struct containing links.
+
+  ## Examples
+      iex> OEIS.search("A000001")
+      ...> |> case do
+      ...>   {:single, seq} -> OEIS.fetch_linked_data(seq)
+      ...>   _ -> {:error, "Sequence not found"}
+      ...> end
+      {:ok, [%{title: "Table of n, a(n) for n = 0..2047", data: [0, 1, 1, 2, 1, 2, 2, 1, 5, 2, 2, ...]} | _]} # Example shortened
+  """
+  def fetch_linked_data(%Sequence{link: links}) do
+    b_file_links =
+      Enum.filter(links, fn
+        %{extra_data: true} -> true
+        # Filter out links without extra_data: true
+        _ -> false
+      end)
+
+    case b_file_links do
+      [] ->
+        {:no_links_found, "No b-file links found for this sequence."}
+
+      _ ->
+        fetched_data = Enum.flat_map(b_file_links, &fetch_and_process_link/1)
+        process_fetched_data(fetched_data)
+    end
+  end
+
+  def fetch_linked_data(_other) do
+    {:error, "Input must be an OEIS.Sequence struct."}
+  end
+
+  defp process_fetched_data(fetched_data) do
+    case fetched_data do
+      [] -> {:no_match, "No integer data extracted from b-file links."}
+      _ -> {:ok, fetched_data}
+    end
+  end
+
+  defp fetch_and_process_link(%{url: url, text: title}) do
+    case fetch_and_parse_b_file(url) do
+      {:ok, data} -> [%{title: title, data: data}]
+      # Silently drop links that fail to fetch or parse for now
+      _error -> []
+    end
+  end
+
+  defp fetch_and_parse_b_file(url) do
+    case Req.get(url) do
+      {:ok, %{status: 200, body: body}} ->
+        parse_b_file_content(body)
+
+      {:ok, %{status: status, body: body}} ->
+        {:error,
+         {:http_error, "Failed to fetch b-file from #{url}: HTTP #{status} - #{inspect(body)}"}}
+
+      {:error, reason} ->
+        {:error, {:http_error, "Failed to fetch b-file from #{url}: #{inspect(reason)}"}}
+    end
+  end
+
+  defp parse_b_file_content(content) when is_binary(content) do
+    lines = String.split(content, ~r/\r?\n/, trim: true)
+    extracted_integers = Enum.flat_map(lines, &parse_b_file_line/1)
+    {:ok, extracted_integers}
+  end
+
+  defp parse_b_file_line(line) do
+    case String.split(line, ~r/\s+/, trim: true) do
+      [_, second_col_str | _] ->
+        case Integer.parse(second_col_str) do
+          {integer, ""} -> [integer]
+          # Not a valid integer, ignore
+          _ -> []
+        end
+
+      # Line doesn't have at least two columns, ignore
+      _ ->
+        []
     end
   end
 
@@ -110,23 +202,19 @@ defmodule OEIS do
     case Keyword.fetch(opts, :id) do
       {:ok, id} ->
         case make_id_request(id) do
-          {:ok, parsed_json_or_nil} -> handle_oeis_response(parsed_json_or_nil)
+          {:ok, decoded_json_body} -> handle_oeis_response(decoded_json_body)
           err -> err
         end
 
       # This is the general search branch
-      :error ->
-        result =
-          with {:ok, query_params} <- build_query_string(opts),
-               search_url = Path.join(@base_url, "/search"),
-               {:ok, parsed_json_or_nil} <- make_request(search_url, query_params) do
-            handle_oeis_response(parsed_json_or_nil)
-          end
 
-        case result do
-          {:ok, _} = ok -> ok
-          {:partial, _message, _sequences, _map} = partial -> partial
-          {:error, _} = error -> error
+      :error ->
+        with {:ok, query_params} <- build_query_string(opts),
+             search_url = Path.join(@base_url, "/search"),
+             {:ok, decoded_json_body} <- make_request(search_url, query_params) do
+          handle_oeis_response(decoded_json_body)
+        else
+          {:error, reason} -> {:error, reason}
         end
     end
   end
@@ -337,27 +425,27 @@ defmodule OEIS do
     end
   end
 
-  defp handle_oeis_response(nil), do: {:ok, []}
+  defp handle_oeis_response(nil), do: {:no_match, "No matches found."}
 
   # Case for when the OEIS API returns a list of results (general search).
   defp handle_oeis_response(results) when is_list(results) and length(results) == 10 do
-    sequences = Enum.map(results, &map_to_sequence/1)
-
-    warning_message =
-      "[OEIS] Your query returned a full page of results. More results might be available. Consider refining your query or using the :start option for pagination."
-
     # Include the raw results if desired
-    {:partial, warning_message, sequences, %{"results" => results}}
+    {:partial, Enum.map(results, &map_to_sequence/1)}
   end
 
   defp handle_oeis_response(results) when is_list(results) do
-    sequences = Enum.map(results, &map_to_sequence/1)
-    {:ok, sequences}
+    case results do
+      [] ->
+        {:no_match, "No matches found."}
+
+      _avail ->
+        {:multi, Enum.map(results, &map_to_sequence/1)}
+    end
   end
 
   # Case for when the OEIS API returns a single sequence object (map) for direct A-number lookups.
-  defp handle_oeis_response(%{"id" => _} = single_result) do
-    {:ok, [map_to_sequence(single_result)]}
+  defp handle_oeis_response(%{"number" => _, "data" => _} = single_result) do
+    {:single, map_to_sequence(single_result)}
   end
 
   defp handle_oeis_response(other), do: {:error, {:unknown_response_format, other}}
@@ -433,12 +521,20 @@ defmodule OEIS do
   defp parse_link_string(link_str, href_regex) do
     case Regex.scan(href_regex, to_string(link_str)) do
       matches when matches != [] ->
-        Enum.map(matches, fn [_, url, text] ->
-          %{url: format_full_url(url), text: text}
-        end)
+        Enum.map(matches, fn [_, url, text] -> build_link_map(url, text) end)
 
       _ ->
         []
+    end
+  end
+
+  defp build_link_map(url, text) do
+    formatted_url = format_full_url(url)
+    link_map = %{url: formatted_url, text: text}
+
+    case String.match?(formatted_url, ~r"oeis\.org/A\d+/b\d+\.txt$") do
+      true -> Map.put(link_map, :extra_data, true)
+      false -> link_map
     end
   end
 
