@@ -383,16 +383,18 @@ defmodule OEIS do
       {:error, {:bad_param, "Unsupported option: #{inspect(key)} with value: #{inspect(value)}."}}
 
   defp truncate_sequence_list(list) do
-    case length(list) do
-      len when len <= @max_sequence_terms ->
+    case length(list) <= @max_sequence_terms do
+      true ->
         list
 
-      # len > @max_sequence_terms
-      _ ->
-        case Enum.drop_while(list, &(&1 in [0, 1])) do
-          [] -> Enum.take(list, @max_sequence_terms)
-          stripped -> Enum.take(stripped, @max_sequence_terms)
+      false ->
+        list
+        |> Enum.drop_while(&(&1 in [0, 1]))
+        |> case do
+          [] -> list
+          stripped -> stripped
         end
+        |> Enum.take(@max_sequence_terms)
     end
   end
 

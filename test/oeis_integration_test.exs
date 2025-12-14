@@ -27,6 +27,14 @@ defmodule OEIS.IntegrationTest do
     assert Enum.any?(sequences, fn s -> s.id == "A000045" end)
   end
 
+  test "search with a long list of only 0s and 1s returns results (fallback logic)" do
+    # > 10 terms, all 0s and 1s. Should fallback to original list and truncate to 10 terms.
+    # 10 zeros should match A000004
+    long_zero_sequence = List.duplicate(0, 15)
+    {_status, sequences} = OEIS.search(long_zero_sequence)
+    assert Enum.any?(sequences, fn s -> s.id == "A000004" end)
+  end
+
   test "search with an ID string returns the correct sequence" do
     assert {:single, %Sequence{id: "A000001"}} = OEIS.search("A000001")
   end
