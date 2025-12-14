@@ -1,7 +1,5 @@
 defmodule Mix.Tasks.Check do
-  @moduledoc """
-  Runs format, test, and credo checks to ensure code quality and consistency.
-  """
+  @moduledoc false
   use Mix.Task
 
   @shortdoc "Runs format, test, and credo checks"

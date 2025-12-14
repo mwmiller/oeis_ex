@@ -20,6 +20,13 @@ defmodule OEIS.IntegrationTest do
              OEIS.search([1, 2, 3, 6, 11, 23, 47, 106, 235])
   end
 
+  test "search with a long list of integers (Fibonacci) is successful" do
+    # > 10 terms, should be truncated internally but still match A000045
+    long_sequence = [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233]
+    {_status, sequences} = OEIS.search(long_sequence)
+    assert Enum.any?(sequences, fn s -> s.id == "A000045" end)
+  end
+
   test "search with an ID string returns the correct sequence" do
     assert {:single, %Sequence{id: "A000001"}} = OEIS.search("A000001")
   end

@@ -7,6 +7,7 @@ defmodule OEIS do
   """
 
   @base_url "https://oeis.org"
+  @max_sequence_terms 10
 
   @string_fields [
     :keyword,
@@ -41,7 +42,9 @@ defmodule OEIS do
   When called with a keyword list, the following keys are accepted:
 
   * `:sequence` (list of integers or a comma-separated string): A list of terms
-    in the sequence to search for.
+    in the sequence to search for. If the sequence has more than 10 terms, it will
+    be automatically adjusted: leading 0s and 1s will be removed, and if it remains
+    longer than 10 terms, it will be truncated to the first 10 terms, as per OEIS hints.
     * Example: `[1, 2, 3, 6, 11, 23]` or `"1,2,3,6,11,23"`
   * `:id` (string): An OEIS A-number to search for.
     * Example: `"A000055"`
@@ -314,7 +317,8 @@ defmodule OEIS do
   defp add_query_term(acc_terms, :sequence, sequence) when is_list(sequence) do
     case Enum.all?(sequence, &is_integer/1) do
       true ->
-        {:ok, [Enum.map_join(sequence, ",", &to_string/1) | acc_terms]}
+        truncated_sequence = truncate_sequence_list(sequence)
+        {:ok, [Enum.map_join(truncated_sequence, ",", &to_string/1) | acc_terms]}
 
       false ->
         {:error,
@@ -325,8 +329,12 @@ defmodule OEIS do
 
   defp add_query_term(acc_terms, :sequence, sequence) when is_binary(sequence) do
     case parse_integer_string(sequence) do
-      {:ok, int_list} -> {:ok, [Enum.join(int_list, ",") | acc_terms]}
-      _ -> {:error, {:bad_param, "Sequence string must be a comma-separated list of integers."}}
+      {:ok, int_list} ->
+        truncated_sequence = truncate_sequence_list(int_list)
+        {:ok, [Enum.join(truncated_sequence, ",") | acc_terms]}
+
+      _ ->
+        {:error, {:bad_param, "Sequence string must be a comma-separated list of integers."}}
     end
   end
 
@@ -373,6 +381,20 @@ defmodule OEIS do
   defp add_query_term(_acc_terms, key, value),
     do:
       {:error, {:bad_param, "Unsupported option: #{inspect(key)} with value: #{inspect(value)}."}}
+
+  defp truncate_sequence_list(list) do
+    case length(list) do
+      len when len <= @max_sequence_terms ->
+        list
+
+      # len > @max_sequence_terms
+      _ ->
+        case Enum.drop_while(list, &(&1 in [0, 1])) do
+          [] -> Enum.take(list, @max_sequence_terms)
+          stripped -> Enum.take(stripped, @max_sequence_terms)
+        end
+    end
+  end
 
   defp make_request(url, query_params) do
     case Req.get(url, params: query_params) do
