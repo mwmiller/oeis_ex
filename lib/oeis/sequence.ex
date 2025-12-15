@@ -1,6 +1,21 @@
 defmodule OEIS.Sequence do
   @moduledoc """
   Represents a sequence from the On-Line Encyclopedia of Integer Sequences.
+
+  ## Fields
+
+  * `:id` - The OEIS A-number (e.g., "A000045").
+  * `:number` - The integer part of the ID (e.g., 45).
+  * `:name` - The name or description of the sequence.
+  * `:data` - A list of integers representing the sequence data.
+  * `:comment` - A list of comments associated with the sequence.
+  * `:reference` - A list of bibliographic references.
+  * `:formula` - A list of formulas describing the sequence.
+  * `:example` - A list of examples.
+  * `:link` - A list of links (maps with :url and :text keys).
+  * `:author` - The author(s) of the sequence.
+  * `:created` - The creation timestamp (DateTime).
+  * `:time` - The last modification timestamp (DateTime).
   """
   defstruct [
     :id,

@@ -11,13 +11,15 @@ defmodule OEIS.IntegrationTest do
   end
 
   test "search with a sequence string returns the correct sequence" do
-    assert {:multi, [%Sequence{id: "A000055"} | _]} =
-             OEIS.search("1,2,3,6,11,23,47,106,235")
+    {status, results} = OEIS.search("1,2,3,6,11,23,47,106,235")
+    assert status in [:multi, :partial]
+    assert match?([%Sequence{id: "A000055"} | _], results)
   end
 
   test "search with a list of integers returns the correct sequence" do
-    assert {:multi, [%Sequence{id: "A000055"} | _]} =
-             OEIS.search([1, 2, 3, 6, 11, 23, 47, 106, 235])
+    {status, results} = OEIS.search([1, 2, 3, 6, 11, 23, 47, 106, 235])
+    assert status in [:multi, :partial]
+    assert match?([%Sequence{id: "A000055"} | _], results)
   end
 
   test "search with a long list of integers (Fibonacci) is successful" do
@@ -132,31 +134,35 @@ defmodule OEIS.IntegrationTest do
     assert Enum.any?(references, fn ref -> String.contains?(ref, "L. Comtet") end)
   end
 
-  test "fetch_extra_data successfully fetches and parses extra data for A000001" do
-    {:single, sequence} = OEIS.search("A000001")
+  test "fetch_more_terms successfully fetches and parses extra data for A000001" do
+    {:single, original_sequence} = OEIS.search("A000001")
 
-    assert {:extra_data, a000001_data} =
-             OEIS.fetch_extra_data(sequence)
+    assert {:ok, updated_sequence} =
+             OEIS.fetch_more_terms(original_sequence)
 
-    assert is_list(a000001_data)
+    assert is_list(updated_sequence.data)
     # A000001 has at least 10 entries in its extra data
-    assert length(a000001_data) >= 10
+    assert length(updated_sequence.data) >= 10
     # First value for A000001 is 0
-    assert Enum.at(a000001_data, 0) == 0
+    assert Enum.at(updated_sequence.data, 0) == 0
     # Second value for A000001 is 1
-    assert Enum.at(a000001_data, 1) == 1
+    assert Enum.at(updated_sequence.data, 1) == 1
   end
 
-  test "fetch_extra_data returns no_links_found for a sequence without extra data links (A360000)" do
-    {:single, sequence} = OEIS.search("A360000")
+  test "fetch_more_terms returns error for a sequence without extra data links (A360000)" do
+    {:single, original_sequence} = OEIS.search("A360000")
 
-    assert {:no_links_found, "No extra data link found for this sequence."} =
-             OEIS.fetch_extra_data(sequence)
+    assert {:error,
+            %{
+              original_sequence: ^original_sequence,
+              message: "No extra data link found for this sequence."
+            }} =
+             OEIS.fetch_more_terms(original_sequence)
   end
 
-  test "fetch_extra_data returns error for invalid input type" do
-    assert {:error, "Input must be an OEIS.Sequence struct."} =
-             OEIS.fetch_extra_data("not a sequence")
+  test "fetch_more_terms returns error for invalid input type" do
+    assert {:error, %{message: "Input must be an OEIS.Sequence struct."}} =
+             OEIS.fetch_more_terms("not a sequence")
   end
 
   test "search with invalid input type returns a bad_param error" do
@@ -166,7 +172,8 @@ defmodule OEIS.IntegrationTest do
   end
 
   test "search with invalid sequence string returns bad_param error" do
-    assert {:error, {:bad_param, "Sequence string must be a comma-separated list of integers."}} =
+    assert {:error,
+            {:bad_param, "Sequence string must be a list of integers (comma or space separated)."}} =
              OEIS.search(sequence: "1, 2, three")
   end
 

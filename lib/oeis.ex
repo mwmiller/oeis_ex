@@ -7,7 +7,7 @@ defmodule OEIS do
   """
 
   @base_url "https://oeis.org"
-  @max_sequence_terms 10
+  @max_sequence_terms 6
 
   @string_fields [
     :keyword,
@@ -17,7 +17,8 @@ defmodule OEIS do
     :formula,
     :example,
     :name,
-    :xref
+    :xref,
+    :subseq
   ]
 
   @doc """
@@ -29,7 +30,16 @@ defmodule OEIS do
 
   When called with a string, it will be treated as an OEIS ID if it matches
   the `A` number format (e.g., `"A000055"`), otherwise it will be treated as a
-  comma-separated sequence (e.g., `"1,2,3,4"`).
+  comma-separated or space-separated sequence (e.g., `"1,2,3,4"` or `"1 2 3 4"`).
+
+  An optional keyword list of options can be provided as the second argument.
+  Supported options:
+  * `:may_truncate` (boolean): If `true` (default), long sequences (more than 6 terms)
+    will be truncated and leading 0s/1s removed to improve search results. If `false`,
+    the sequence is searched exactly as provided.
+  * `:respect_sign` (boolean): If `true` (default), the search will respect the signs
+    of the numbers in the sequence (using the `signed:` prefix). If `false`,
+    the search will ignore signs (using the `seq:` prefix).
 
   On success, returns `{:single, sequence}` for an exact ID match, or `{:multi, list_of_sequences}` for other searches. `list_of_sequences` is a list of `OEIS.Sequence` structs. If no results are found, `{:no_match, "No matches found."}` is returned.
 
@@ -37,15 +47,20 @@ defmodule OEIS do
   searches), it implies there might be more results available. In such cases,
   a `{:partial, list_of_sequences}` tuple is returned.
 
+  ## Search Hints
+  * **Term Limit:** Providing too many terms can often lead to no results because the sequence in the database might be shorter or differ slightly. This function automatically truncates long sequences to 6 terms (excluding leading 0s and 1s) to improve match rates.
+  * **Leading Terms:** It is often helpful to omit the first few terms if the sequence has many leading 0s or 1s, or if the starting value is conventional (e.g. starting at n=0 vs n=1).
+  * **Gaps:** If your sequence has many zeros (e.g., `1, 0, 2, 0, 4, 0`), try removing the zeros (`1, 2, 4`) for a better search.
+  * **Formats:** Sequences can be supplied as lists of integers, comma-separated strings, or space-separated strings.
+
   ## Parameters
 
   When called with a keyword list, the following keys are accepted:
 
-  * `:sequence` (list of integers or a comma-separated string): A list of terms
-    in the sequence to search for. If the sequence has more than 10 terms, it will
-    be automatically adjusted: leading 0s and 1s will be removed, and if it remains
-    longer than 10 terms, it will be truncated to the first 10 terms, as per OEIS hints.
-    * Example: `[1, 2, 3, 6, 11, 23]` or `"1,2,3,6,11,23"`
+  * `:sequence` (list of integers, or a string): A list of terms in the sequence to search for.
+    If the sequence has more than 6 terms, it will be automatically adjusted: leading 0s and 1s
+    will be removed, and if it remains longer than 6 terms, it will be truncated to the first 6 terms.
+    * Example: `[1, 2, 3, 6, 11, 23]`, `"1,2,3,6,11,23"`, or `"1 2 3 6 11 23"`
   * `:id` (string): An OEIS A-number to search for.
     * Example: `"A000055"`
   * `:keyword` (string): A keyword to filter results.
@@ -83,38 +98,46 @@ defmodule OEIS do
       iex> OEIS.search(query: "prime number")
       {:no_match, "No matches found."}
   """
-  def search(opts) do
-    case opts do
-      num when is_integer(num) ->
-        do_search(id: "A" <> String.pad_leading(to_string(num), 6, "0"))
+  def search(query, options \\ [])
 
-      str when is_binary(str) ->
-        handle_string_search(str)
+  def search(num, options) when is_integer(num) do
+    do_search([id: "A" <> String.pad_leading(to_string(num), 6, "0")], options)
+  end
 
-      list when is_list(list) ->
-        case Keyword.keyword?(list) do
-          true -> do_search(list)
-          false -> do_search(sequence: list)
-        end
+  def search(str, options) when is_binary(str) do
+    handle_string_search(str, options)
+  end
 
-      _ ->
-        {:error, {:bad_param, "Input must be a keyword list, a list of integers, or a string."}}
+  def search(list, options) when is_list(list) do
+    case Keyword.keyword?(list) do
+      true -> do_search(list, options)
+      false -> do_search([sequence: list], options)
     end
   end
 
+  def search(_other, _options) do
+    {:error, {:bad_param, "Input must be a keyword list, a list of integers, or a string."}}
+  end
+
+  @default_options [may_truncate: true, respect_sign: true]
+
+  defp ensure_options(opts) do
+    Keyword.merge(@default_options, opts)
+  end
+
   @doc """
-  Fetches and parses extra data associated with an OEIS sequence, returning extracted data.
+  Fetches more terms for an OEIS sequence from its associated "b-file".
 
   This function takes an `OEIS.Sequence` struct, identifies the single link pointing to
   an `oeis.org/.../b<A-number>.txt` file (which contains the extra data), fetches its content, and extracts
   the integer values from the second column of each line. The leading index column
-  in these `.txt` files is ignored.
+  in these `.txt` files is ignored. The fetched terms replace the existing ones in the sequence.
 
-  Returns `{:extra_data, data}` on success, where `data` is a list of integers extracted
-  from the linked extra data.
-  Returns `{:no_links_found, message}` if no relevant extra data link is found in the sequence.
-  Returns `{:no_match, message}` if an extra data link is found but no integer data can be extracted.
-  Returns `{:error, reason}` if any HTTP request or parsing operation fails.
+  Returns `{:ok, updated_sequence}` on success, where `updated_sequence` is the
+  original sequence with its `data` field updated with the new terms.
+  Returns `{:error, %{original_sequence: original, message: error_message}}` on failure,
+  including cases where no extra data link is found, no integer data can be extracted,
+  or an HTTP request/parsing error occurs.
 
   ## Parameters
   * `sequence` (OEIS.Sequence): The OEIS sequence struct containing links.
@@ -122,23 +145,36 @@ defmodule OEIS do
   ## Examples
       iex> OEIS.search("A000001")
       ...> |> case do
-      ...>   {:single, seq} -> OEIS.fetch_extra_data(seq)
-      ...>   _ -> {:error, "Sequence not found"}
+      ...>   {:single, seq} -> OEIS.fetch_more_terms(seq)
+      ...>   _ -> {:error, %{message: "Sequence not found"}}
       ...> end
-      {:extra_data, [0, 1, 1, 2, 1, 2, 2, 1, 5, 2, 2, ...]} # Example shortened
+      {:ok, %OEIS.Sequence{id: "A000001", data: [0, 1, 1, 2, 1, 2, 2, 1, 5, 2, 2, ...]}} # Example shortened
   """
-  def fetch_extra_data(%Sequence{link: links}) do
-    case Enum.find(links, &Map.get(&1, :extra_data, false)) do
+  def fetch_more_terms(%OEIS.Sequence{} = original_sequence) do
+    case Enum.find(original_sequence.link, &Map.get(&1, :extra_data, false)) do
       nil ->
-        {:no_links_found, "No extra data link found for this sequence."}
+        {:error,
+         %{
+           original_sequence: original_sequence,
+           message: "No extra data link found for this sequence."
+         }}
 
       %{url: url, text: title} = link ->
-        process_b_file_link(link, url, title)
+        case process_b_file_link(link, url, title) do
+          {:extra_data, data} ->
+            {:ok, %{original_sequence | data: data}}
+
+          {:no_match, message} ->
+            {:error, %{original_sequence: original_sequence, message: message}}
+
+          {:error, reason} ->
+            {:error, %{original_sequence: original_sequence, message: reason}}
+        end
     end
   end
 
-  def fetch_extra_data(_other) do
-    {:error, "Input must be an OEIS.Sequence struct."}
+  def fetch_more_terms(_other) do
+    {:error, %{message: "Input must be an OEIS.Sequence struct."}}
   end
 
   defp process_b_file_link(%{url: url, text: title}, _url, _title) do
@@ -191,23 +227,23 @@ defmodule OEIS do
     end
   end
 
-  defp handle_string_search(<<"A", _id_num::binary-size(6)>> = a_number) do
-    do_search(id: a_number)
+  defp handle_string_search(<<"A", _id_num::binary-size(6)>> = a_number, options) do
+    do_search([id: a_number], options)
   end
 
-  defp handle_string_search(str) do
+  defp handle_string_search(str, options) do
     case Integer.parse(str) do
       {num, ""} ->
-        do_search(id: "A" <> String.pad_leading(to_string(num), 6, "0"))
+        do_search([id: "A" <> String.pad_leading(to_string(num), 6, "0")], options)
 
       # Not an integer, treat as sequence
       _ ->
-        do_search(sequence: str)
+        do_search([sequence: str], options)
     end
   end
 
-  defp do_search(opts) do
-    case Keyword.fetch(opts, :id) do
+  defp do_search(terms, options) do
+    case Keyword.fetch(terms, :id) do
       {:ok, id} ->
         case make_id_request(id) do
           {:ok, decoded_json_body} -> handle_oeis_response(decoded_json_body)
@@ -217,7 +253,7 @@ defmodule OEIS do
       # This is the general search branch
 
       :error ->
-        with {:ok, query_params} <- build_query_string(opts),
+        with {:ok, query_params} <- build_query_string(terms, ensure_options(options)),
              search_url = Path.join(@base_url, "/search"),
              {:ok, decoded_json_body} <- make_request(search_url, query_params) do
           handle_oeis_response(decoded_json_body)
@@ -243,17 +279,18 @@ defmodule OEIS do
     end
   end
 
-  defp build_query_string(opts) do
-    with {:ok, query_map} <- build_base_query_map(opts) do
-      handle_start_param(query_map, Keyword.get(opts, :start))
+  defp build_query_string(terms, opts) do
+    with {:ok, query_map} <- build_base_query_map(terms, opts) do
+      start_param = Keyword.get(opts, :start) || Keyword.get(terms, :start)
+      handle_start_param(query_map, start_param)
     end
   end
 
-  defp build_base_query_map(opts) do
-    do_build_query_terms(opts, {:ok, []})
+  defp build_base_query_map(terms, opts) do
+    do_build_query_terms(terms, opts, {:ok, []})
   end
 
-  defp do_build_query_terms([], {:ok, acc_terms}) do
+  defp do_build_query_terms([], _opts, {:ok, acc_terms}) do
     case Enum.empty?(acc_terms) do
       true ->
         {:error,
@@ -266,27 +303,28 @@ defmodule OEIS do
     end
   end
 
-  defp do_build_query_terms([{_key, nil} | tail], acc_status),
-    do: do_build_query_terms(tail, acc_status)
+  defp do_build_query_terms([{_key, nil} | tail], opts, acc_status),
+    do: do_build_query_terms(tail, opts, acc_status)
 
-  defp do_build_query_terms([head | tail], {:ok, acc_terms}) do
+  defp do_build_query_terms([head | tail], opts, {:ok, acc_terms}) do
     {key, value} = head
 
     case key do
-      # <--- Skip :start
       :start ->
-        do_build_query_terms(tail, {:ok, acc_terms})
+        do_build_query_terms(tail, opts, {:ok, acc_terms})
 
       _ ->
-        case add_query_term(acc_terms, key, value) do
-          {:ok, new_acc_terms} -> do_build_query_terms(tail, {:ok, new_acc_terms})
-          {:error, _} = err -> err
+        case add_query_term(acc_terms, opts, key, value) do
+          {:ok, new_acc_terms} ->
+            do_build_query_terms(tail, opts, {:ok, new_acc_terms})
+
+          {:error, _} = err ->
+            err
         end
     end
   end
 
-  defp do_build_query_terms([_head | _tail], {:error, _} = err), do: err
-  defp do_build_query_terms([], {:error, _} = err), do: err
+  defp do_build_query_terms(_rem, _opts, {:error, _} = err), do: err
 
   defp handle_start_param(query_map, nil), do: {:ok, query_map}
 
@@ -298,87 +336,106 @@ defmodule OEIS do
   defp handle_start_param(_query_map, _),
     do: {:error, {:bad_param, ":start must be a non-negative integer."}}
 
-  defp parse_integer_string(sequence_str) do
+  defp normalize_sequence_to_list(list) when is_list(list) do
+    case Enum.all?(list, &is_integer/1) do
+      true -> {:ok, list}
+      false -> {:error, "Sequence list must contain only integers."}
+    end
+  end
+
+  defp normalize_sequence_to_list(str) when is_binary(str) do
+    case parse_string_to_int_list(str) do
+      {:ok, int_list} ->
+        case int_list do
+          [] -> {:error, "Sequence string cannot be empty."}
+          list -> {:ok, list}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp normalize_sequence_to_list(_),
+    do: {:error, "Sequence must be a list of integers or a string of integers."}
+
+  defp parse_string_to_int_list(str) do
     integers_and_remains =
-      sequence_str
-      |> String.split(",", trim: true)
+      str
+      |> String.split(~r/[\s,]+/, trim: true)
       |> Enum.map(&String.trim/1)
       |> Enum.map(&Integer.parse/1)
 
-    case Enum.all?(integers_and_remains, fn
-           {int, rest} when is_integer(int) and rest == "" -> true
-           _ -> false
-         end) do
-      true -> {:ok, Enum.map(integers_and_remains, fn {int, _rest} -> int end)}
-      false -> {:error, :not_an_integer_list_string}
-    end
-  end
-
-  defp add_query_term(acc_terms, :sequence, sequence) when is_list(sequence) do
-    case Enum.all?(sequence, &is_integer/1) do
+    case Enum.all?(integers_and_remains, &valid_integer_parse?/1) do
       true ->
-        truncated_sequence = truncate_sequence_list(sequence)
-        {:ok, [Enum.map_join(truncated_sequence, ",", &to_string/1) | acc_terms]}
+        {:ok, Enum.map(integers_and_remains, fn {int, _rest} -> int end)}
 
       false ->
-        {:error,
-         {:bad_param,
-          "Sequence must be a list of integers or a comma-separated string of integers."}}
+        {:error, "Sequence string must be a list of integers (comma or space separated)."}
     end
   end
 
-  defp add_query_term(acc_terms, :sequence, sequence) when is_binary(sequence) do
-    case parse_integer_string(sequence) do
+  defp valid_integer_parse?({int, rest}) when is_integer(int) and rest == "", do: true
+  defp valid_integer_parse?(_), do: false
+
+  defp add_query_term(acc_terms, opts, :sequence, sequence) do
+    case normalize_sequence_to_list(sequence) do
       {:ok, int_list} ->
-        truncated_sequence = truncate_sequence_list(int_list)
-        {:ok, [Enum.join(truncated_sequence, ",") | acc_terms]}
+        final_list =
+          case Keyword.get(opts, :may_truncate) do
+            true -> truncate_sequence_list(int_list)
+            false -> int_list
+          end
 
-      _ ->
-        {:error, {:bad_param, "Sequence string must be a comma-separated list of integers."}}
+        prefix =
+          case Keyword.get(opts, :respect_sign) do
+            true -> "signed:"
+            false -> "seq:"
+          end
+
+        {:ok, [prefix <> Enum.join(final_list, ",") | acc_terms]}
+
+      {:error, reason} ->
+        {:error, {:bad_param, reason}}
     end
   end
 
-  defp add_query_term(_acc_terms, :sequence, _),
-    do:
-      {:error,
-       {:bad_param,
-        "Sequence must be a list of integers or a comma-separated string of integers."}}
-
-  defp add_query_term(acc_terms, :id, <<"A", _id_num::binary-size(6)>> = id) do
+  defp add_query_term(acc_terms, _opts, :id, <<"A", _id_num::binary-size(6)>> = id) do
     {:ok, ["id:" <> id | acc_terms]}
   end
 
-  defp add_query_term(_acc_terms, :id, _id),
+  defp add_query_term(_acc_terms, _opts, :id, _id),
     do:
       {:error,
        {:bad_param,
         "ID must be a string starting with 'A' and 7 characters long (e.g., 'A000001')."}}
 
-  defp add_query_term(acc_terms, key, value) when key in @string_fields and is_binary(value) do
+  defp add_query_term(acc_terms, _opts, key, value)
+       when key in @string_fields and is_binary(value) do
     {:ok, ["#{Atom.to_string(key)}:" <> value | acc_terms]}
   end
 
-  defp add_query_term(_acc_terms, key, _value) when key in @string_fields do
+  defp add_query_term(_acc_terms, _opts, key, _value) when key in @string_fields do
     {:error, {:bad_param, "#{Atom.to_string(key)} must be a string."}}
   end
 
-  defp add_query_term(acc_terms, :author, author) when is_binary(author) do
+  defp add_query_term(acc_terms, _opts, :author, author) when is_binary(author) do
     {:ok, ["author:*" <> author <> "*" | acc_terms]}
   end
 
-  defp add_query_term(_acc_terms, :author, _),
+  defp add_query_term(_acc_terms, _opts, :author, _val),
     do: {:error, {:bad_param, "Author must be a string."}}
 
-  defp add_query_term(acc_terms, :query, query_str) when is_binary(query_str) do
+  defp add_query_term(acc_terms, _opts, :query, query_str) when is_binary(query_str) do
     {:ok, [query_str | acc_terms]}
   end
 
-  defp add_query_term(_acc_terms, :query, _),
+  defp add_query_term(_acc_terms, _opts, :query, _val),
     do: {:error, {:bad_param, "General query must be a string."}}
 
   # Catch-all for unsupported options
 
-  defp add_query_term(_acc_terms, key, value),
+  defp add_query_term(_acc_terms, _opts, key, value),
     do:
       {:error, {:bad_param, "Unsupported option: #{inspect(key)} with value: #{inspect(value)}."}}
 
@@ -439,7 +496,7 @@ defmodule OEIS do
 
   defp map_to_sequence(result) do
     data = Map.get(result, "data", "")
-    {_ok, data_list} = parse_integer_string(data)
+    {_ok, data_list} = normalize_sequence_to_list(data)
 
     created =
       with created_str when is_binary(created_str) <- Map.get(result, "created"),
@@ -505,7 +562,7 @@ defmodule OEIS do
   end
 
   defp extract_links_from_result(result) do
-    href_regex = ~r/href="([^"]*)">([^<]+)<\/a>/
+    href_regex = ~r/href=\"([^\"]*)\">([^<]+)<\/a>/
     links = Map.get(result, "link", [])
     Enum.flat_map(links, &parse_link_string(&1, href_regex))
   end
