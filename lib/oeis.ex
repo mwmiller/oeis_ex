@@ -1,10 +1,9 @@
 defmodule OEIS do
-  alias Jason
-  alias OEIS.Sequence
-
   @moduledoc """
   A client for the On-Line Encyclopedia of Integer Sequences (OEIS).
   """
+
+  alias OEIS.Sequence
 
   @base_url "https://oeis.org"
   @max_sequence_terms 6
