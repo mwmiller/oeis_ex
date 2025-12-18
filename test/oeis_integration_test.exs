@@ -181,4 +181,28 @@ defmodule OEIS.IntegrationTest do
     assert {:partial, [%Sequence{id: "A000045"} | _]} =
              OEIS.search(name: "Fibonacci")
   end
+
+  test "fetch_xrefs successfully fetches related sequences for A000045" do
+    {:single, seq} = OEIS.search("A000045")
+    # A000045 has many xrefs. Let's fetch them with low concurrency to be safe.
+    # Note: We don't want to fetch ALL of them if there are too many,
+    # but fetch_xrefs currently fetches everything it finds.
+    # For A000045, it finds ~50+ IDs.
+
+    # To keep the test reasonable, we might mock or just verify it works for a few.
+    # Since this is an integration test, we'll let it fetch.
+    results = OEIS.fetch_xrefs(seq, max_concurrency: 5)
+
+    assert is_list(results)
+    assert length(results) > 0
+    # Verify we got some actual sequences
+    assert Enum.all?(results, fn s -> match?(%Sequence{}, s) end)
+    # Check for a specific related sequence we expect, e.g., A000032 (Lucas)
+    assert Enum.any?(results, fn s -> s.id == "A000032" end)
+  end
+
+  test "fetch_xrefs returns error for invalid input type" do
+    assert {:error, %{message: "Input must be an OEIS.Sequence struct."}} =
+             OEIS.fetch_xrefs("not a sequence")
+  end
 end

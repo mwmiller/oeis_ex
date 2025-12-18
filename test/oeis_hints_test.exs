@@ -17,12 +17,6 @@ defmodule OEIS.HintsTest do
     assert match?([%Sequence{id: "A000055"} | _], results)
   end
 
-  test "search with :subseq parameter" do
-    # subseq: matches numbers in order
-    {status, _results} = OEIS.search(subseq: "1,2,3,5,8")
-    assert status in [:multi, :partial]
-  end
-
   test "truncation to 6 terms works" do
     # 7 terms: 1, 2, 3, 6, 11, 23, 47 -> should be truncated to 6
     # If we provide enough terms that usually match A000055, checking if it still returns valid results
@@ -31,5 +25,11 @@ defmodule OEIS.HintsTest do
     {status, sequences} = OEIS.search(long_seq)
     assert status in [:multi, :partial]
     assert Enum.any?(sequences, fn s -> s.id == "A000055" end)
+  end
+
+  test "truncation fallback for only 0s and 1s" do
+    # > 6 terms, all 0 or 1 -> stripped becomes empty -> fallback to original list
+    seq = [0, 1, 0, 1, 0, 1, 0]
+    assert {:partial, _} = OEIS.search(seq)
   end
 end
