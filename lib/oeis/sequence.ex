@@ -13,6 +13,7 @@ defmodule OEIS.Sequence do
   * `:formula` - A list of formulas describing the sequence.
   * `:example` - A list of examples.
   * `:link` - A list of links (maps with :url and :text keys).
+  * `:xref` - A list of cross-references to other sequences.
   * `:author` - The author(s) of the sequence.
   * `:created` - The creation timestamp (DateTime).
   * `:time` - The last modification timestamp (DateTime).
@@ -27,6 +28,7 @@ defmodule OEIS.Sequence do
     :formula,
     :example,
     :link,
+    :xref,
     :author,
     :created,
     :time

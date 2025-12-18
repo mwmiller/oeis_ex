@@ -118,7 +118,12 @@ defmodule OEIS do
     {:error, {:bad_param, "Input must be a keyword list, a list of integers, or a string."}}
   end
 
-  @default_options [may_truncate: true, respect_sign: true]
+  @default_options [
+    may_truncate: true,
+    respect_sign: true,
+    max_concurrency: 5,
+    timeout: 15_000
+  ]
 
   defp ensure_options(opts) do
     Keyword.merge(@default_options, opts)
@@ -149,7 +154,11 @@ defmodule OEIS do
       ...> end
       {:ok, %OEIS.Sequence{id: "A000001", data: [0, 1, 1, 2, 1, 2, 2, 1, 5, 2, 2, ...]}} # Example shortened
   """
-  def fetch_more_terms(%OEIS.Sequence{} = original_sequence) do
+  def fetch_more_terms(sequence, options \\ [])
+
+  def fetch_more_terms(%OEIS.Sequence{} = original_sequence, options) do
+    opts = ensure_options(options)
+
     case Enum.find(original_sequence.link, &Map.get(&1, :extra_data, false)) do
       nil ->
         {:error,
@@ -159,7 +168,7 @@ defmodule OEIS do
          }}
 
       %{url: url, text: title} = link ->
-        case process_b_file_link(link, url, title) do
+        case process_b_file_link(link, url, title, opts) do
           {:extra_data, data} ->
             {:ok, %{original_sequence | data: data}}
 
@@ -172,12 +181,61 @@ defmodule OEIS do
     end
   end
 
-  def fetch_more_terms(_other) do
+  def fetch_more_terms(_other, _options) do
     {:error, %{message: "Input must be an OEIS.Sequence struct."}}
   end
 
-  defp process_b_file_link(%{url: url, text: title}, _url, _title) do
-    case fetch_and_parse_extra_data(url) do
+  @doc """
+  Fetches the sequence definitions for the IDs listed in the sequence's `xref` field.
+
+  This function extracts OEIS IDs (e.g., "A000045") from the cross-reference strings
+  and performs parallel searches for each ID found.
+  It uses `Task.async_stream/4` to fetch them concurrently.
+
+  ## Options
+
+  * `:max_concurrency` - The maximum number of concurrent requests (default: 5).
+  * `:timeout` - The timeout for each request in milliseconds (default: 15_000).
+
+  ## Examples
+
+      iex> {:single, seq} = OEIS.search("A000045")
+      iex> related_sequences = OEIS.fetch_xrefs(seq, max_concurrency: 3)
+      iex> Enum.map(related_sequences, & &1.id)
+      ["A000032", "A001622", ...] # List of related IDs
+  """
+  def fetch_xrefs(sequence, options \\ [])
+
+  def fetch_xrefs(%OEIS.Sequence{xref: xref}, options) do
+    opts = ensure_options(options)
+    max_concurrency = opts[:max_concurrency]
+    timeout = opts[:timeout]
+
+    xref
+    |> extract_xref_ids()
+    |> Task.async_stream(
+      fn id ->
+        case search(id) do
+          {:single, seq} -> seq
+          _ -> nil
+        end
+      end,
+      max_concurrency: max_concurrency,
+      timeout: timeout
+    )
+    |> Enum.map(fn
+      {:ok, result} -> result
+      _ -> nil
+    end)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  def fetch_xrefs(_other, _options) do
+    {:error, %{message: "Input must be an OEIS.Sequence struct."}}
+  end
+
+  defp process_b_file_link(%{url: url, text: title}, _url, _title, opts) do
+    case fetch_and_parse_extra_data(url, opts) do
       {:ok, data} ->
         case data do
           [] -> {:no_match, "No integer data extracted from extra data for link: #{title}"}
@@ -190,8 +248,10 @@ defmodule OEIS do
     end
   end
 
-  defp fetch_and_parse_extra_data(url) do
-    case Req.get(url) do
+  defp fetch_and_parse_extra_data(url, opts) do
+    req_opts = [receive_timeout: opts[:timeout]]
+
+    case Req.get(url, req_opts) do
       {:ok, %{status: 200, body: body}} ->
         parse_extra_data_content(body)
 
@@ -242,9 +302,11 @@ defmodule OEIS do
   end
 
   defp do_search(terms, options) do
+    opts = ensure_options(options)
+
     case Keyword.fetch(terms, :id) do
       {:ok, id} ->
-        case make_id_request(id) do
+        case make_id_request(id, opts) do
           {:ok, decoded_json_body} -> handle_oeis_response(decoded_json_body)
           err -> err
         end
@@ -252,9 +314,9 @@ defmodule OEIS do
       # This is the general search branch
 
       :error ->
-        with {:ok, query_params} <- build_query_string(terms, ensure_options(options)),
+        with {:ok, query_params} <- build_query_string(terms, opts),
              search_url = Path.join(@base_url, "/search"),
-             {:ok, decoded_json_body} <- make_request(search_url, query_params) do
+             {:ok, decoded_json_body} <- make_request(search_url, query_params, opts) do
           handle_oeis_response(decoded_json_body)
         else
           {:error, reason} -> {:error, reason}
@@ -262,20 +324,9 @@ defmodule OEIS do
     end
   end
 
-  defp make_id_request(id) do
-    url = Path.join(@base_url, "#{id}?fmt=json")
-
-    case Req.get(url) do
-      {:ok, %Req.Response{status: 200, body: body}} ->
-        # body is already decoded by Req (could be nil, a map, or a list)
-        {:ok, body}
-
-      {:ok, %Req.Response{status: status, body: body}} ->
-        {:error, {:http_error, "HTTP Error: #{status} - #{inspect(body)}"}}
-
-      {:error, reason} ->
-        {:error, {:http_error, reason}}
-    end
+  defp make_id_request(id, opts) do
+    url = Path.join(@base_url, id)
+    make_request(url, [fmt: "json"], opts)
   end
 
   defp build_query_string(terms, opts) do
@@ -454,8 +505,10 @@ defmodule OEIS do
     end
   end
 
-  defp make_request(url, query_params) do
-    case Req.get(url, params: query_params) do
+  defp make_request(url, query_params, opts) do
+    req_opts = [params: query_params, receive_timeout: opts[:timeout]]
+
+    case Req.get(url, req_opts) do
       {:ok, %Req.Response{status: 200, body: body}} ->
         # body is already decoded by Req (could be nil, a map, or a list)
         {:ok, body}
@@ -523,10 +576,27 @@ defmodule OEIS do
       formula: Map.get(result, "formula"),
       example: Map.get(result, "example"),
       link: extract_links_from_result(result),
+      xref: Map.get(result, "xref"),
       author: extract_author(result),
       created: created,
       time: time
     }
+  end
+
+  defp extract_xref_ids(xrefs) do
+    case xrefs do
+      list when is_list(list) ->
+        list
+        |> Enum.flat_map(fn text ->
+          Regex.scan(~r/A\d{6}/, to_string(text))
+        end)
+        |> List.flatten()
+        |> Enum.uniq()
+        |> Enum.sort()
+
+      _ ->
+        []
+    end
   end
 
   defp extract_author(result) do
@@ -545,7 +615,8 @@ defmodule OEIS do
         end
 
     authors =
-      Enum.flat_map(all_texts, fn text ->
+      all_texts
+      |> Enum.flat_map(fn text ->
         case Regex.run(author_regex, to_string(text)) do
           [_whole, author] -> [String.trim(author)]
           _ -> []
