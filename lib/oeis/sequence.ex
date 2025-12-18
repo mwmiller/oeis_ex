@@ -17,6 +17,17 @@ defmodule OEIS.Sequence do
   * `:author` - The author(s) of the sequence.
   * `:created` - The creation timestamp (DateTime).
   * `:time` - The last modification timestamp (DateTime).
+
+  ## Enumerable
+
+  `OEIS.Sequence` implements the `Enumerable` protocol, which allows you to iterate
+  over its sequence `:data` directly using the `Enum` module.
+
+  ```elixir
+  iex> {:single, seq} = OEIS.search("A000045")
+  iex> Enum.take(seq, 5)
+  [0, 1, 1, 2, 3]
+  ```
   """
   defstruct [
     :id,

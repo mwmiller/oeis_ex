@@ -38,6 +38,8 @@ defmodule OEIS do
   * `:respect_sign` (boolean): If `true` (default), the search will respect the signs
     of the numbers in the sequence (using the `signed:` prefix). If `false`,
     the search will ignore signs (using the `seq:` prefix).
+  * `:timeout` (integer): Request timeout in milliseconds (default: 15,000).
+  * `:max_concurrency` (integer): Concurrency limit for parallel tasks (default: 5).
 
   On success, returns `{:single, sequence}` for an exact ID match, or `{:multi, list_of_sequences}` for other searches. `list_of_sequences` is a list of `OEIS.Sequence` structs. If no results are found, `{:no_match, "No matches found."}` is returned.
 
@@ -145,6 +147,10 @@ defmodule OEIS do
   ## Parameters
   * `sequence` (OEIS.Sequence): The OEIS sequence struct containing links.
 
+  ## Options
+  * `:timeout` (integer): Request timeout in milliseconds (default: 15,000).
+  * `:max_concurrency` (integer): Concurrency limit for parallel tasks (default: 5).
+
   ## Examples
       iex> OEIS.search("A000001")
       ...> |> case do
@@ -192,9 +198,8 @@ defmodule OEIS do
   It uses `Task.async_stream/4` to fetch them concurrently.
 
   ## Options
-
-  * `:max_concurrency` - The maximum number of concurrent requests (default: 5).
-  * `:timeout` - The timeout for each request in milliseconds (default: 15_000).
+  * `:timeout` (integer): Request timeout in milliseconds (default: 15,000).
+  * `:max_concurrency` (integer): Concurrency limit for parallel tasks (default: 5).
 
   ## Examples
 
