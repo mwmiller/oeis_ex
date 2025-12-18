@@ -16,8 +16,7 @@ defmodule OEIS do
     :formula,
     :example,
     :name,
-    :xref,
-    :subseq
+    :xref
   ]
 
   @doc """

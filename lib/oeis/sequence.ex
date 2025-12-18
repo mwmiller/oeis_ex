@@ -44,11 +44,11 @@ defmodule OEIS.Sequence do
     end
 
     def reduce(%OEIS.Sequence{data: data}, acc, fun) do
-      Enum.reduce(data, acc, fun)
+      Enumerable.reduce(data, acc, fun)
     end
 
     def slice(_s) do
-      {:error, :not_available}
+      {:error, __MODULE__}
     end
   end
 end
