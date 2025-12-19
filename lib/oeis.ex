@@ -27,8 +27,10 @@ defmodule OEIS do
   a sequence), or a raw string.
 
   When called with a string, it will be treated as an OEIS ID if it matches
-  the `A` number format (e.g., `"A000055"`), otherwise it will be treated as a
-  comma-separated or space-separated sequence (e.g., `"1,2,3,4"` or `"1 2 3 4"`).
+  the `A` number format (e.g., `"A000055"`) or is a plain integer string.
+  If it's a comma-separated or space-separated list of integers, it will be treated
+  as a sequence search. Otherwise, it will be treated as a general query
+  (e.g., `"Fibonacci"`).
 
   An optional keyword list of options can be provided as the second argument.
   Supported options:
@@ -299,9 +301,15 @@ defmodule OEIS do
       {num, ""} ->
         do_search([id: "A" <> String.pad_leading(to_string(num), 6, "0")], options)
 
-      # Not an integer, treat as sequence
+      # Not an integer, try to parse as a sequence of integers
       _ ->
-        do_search([sequence: str], options)
+        case parse_string_to_int_list(str) do
+          {:ok, _int_list} ->
+            do_search([sequence: str], options)
+
+          {:error, _reason} ->
+            do_search([query: str], options)
+        end
     end
   end
 
@@ -570,6 +578,17 @@ defmodule OEIS do
         _ -> nil
       end
 
+    keyword =
+      result
+      |> Map.get("keyword", "")
+      |> String.split(",", trim: true)
+
+    offset =
+      case Map.get(result, "offset", "") |> String.split(",", trim: true) do
+        [a, b] -> {String.to_integer(a), String.to_integer(b)}
+        _ -> nil
+      end
+
     %Sequence{
       id: "A" <> String.pad_leading(to_string(Map.get(result, "number")), 6, "0"),
       number: Map.get(result, "number"),
@@ -581,6 +600,14 @@ defmodule OEIS do
       example: Map.get(result, "example"),
       link: extract_links_from_result(result),
       xref: Map.get(result, "xref"),
+      keyword: keyword,
+      offset: offset,
+      maple: Map.get(result, "maple"),
+      mathematica: Map.get(result, "mathematica"),
+      program: Map.get(result, "program"),
+      revision: Map.get(result, "revision"),
+      references: Map.get(result, "references"),
+      ext: Map.get(result, "ext"),
       author: extract_author(result),
       created: created,
       time: time

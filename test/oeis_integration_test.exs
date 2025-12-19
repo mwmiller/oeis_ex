@@ -53,7 +53,12 @@ defmodule OEIS.IntegrationTest do
     assert {:single,
             %Sequence{
               id: "A037074",
-              name: "Numbers that are the product of a pair of twin primes." <> _
+              name: "Numbers that are the product of a pair of twin primes." <> _,
+              keyword: ["nice", "nonn"],
+              offset: {1, 1},
+              revision: 118,
+              references: 80,
+              ext: ["More terms from _Erich Friedman_"]
             }} = OEIS.search("A037074")
   end
 
@@ -194,7 +199,7 @@ defmodule OEIS.IntegrationTest do
     results = OEIS.fetch_xrefs(seq, max_concurrency: 5)
 
     assert is_list(results)
-    assert length(results) > 0
+    assert results != []
     # Verify we got some actual sequences
     assert Enum.all?(results, fn s -> match?(%Sequence{}, s) end)
     # Check for a specific related sequence we expect, e.g., A000032 (Lucas)

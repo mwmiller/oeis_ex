@@ -6,7 +6,15 @@ defmodule OEIS.SequenceTest do
     setup do
       seq = %Sequence{
         id: "A000045",
-        data: [0, 1, 1, 2, 3, 5, 8]
+        data: [0, 1, 1, 2, 3, 5, 8],
+        keyword: ["core", "nonn", "nice"],
+        offset: {0, 4},
+        maple: ["fibonacci(n);"],
+        mathematica: ["Fibonacci[n]"],
+        program: ["(PARI) fibonacci(n)"],
+        revision: 2445,
+        references: 6036,
+        ext: ["Some extension"]
       }
 
       {:ok, seq: seq}

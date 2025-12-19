@@ -5,7 +5,7 @@ defmodule OEIS.Sequence do
   ## Fields
 
   * `:id` - The OEIS A-number (e.g., "A000045").
-  * `:number` - The integer part of the ID (e.g., 45).
+  * `:number` - The integer part of the A-number (e.g., 45).
   * `:name` - The name or description of the sequence.
   * `:data` - A list of integers representing the sequence data.
   * `:comment` - A list of comments associated with the sequence.
@@ -14,6 +14,14 @@ defmodule OEIS.Sequence do
   * `:example` - A list of examples.
   * `:link` - A list of links (maps with :url and :text keys).
   * `:xref` - A list of cross-references to other sequences.
+  * `:keyword` - A list of keywords associated with the sequence (e.g., ["core", "nice"]).
+  * `:offset` - A tuple of two integers `{subscript, sort_term}` where `subscript` is the index of the first term.
+  * `:maple` - A list of Maple code snippets.
+  * `:mathematica` - A list of Mathematica code snippets.
+  * `:program` - A list of code snippets in other languages.
+  * `:revision` - The revision number of the sequence entry.
+  * `:references` - The total count of bibliographic references.
+  * `:ext` - A list of extensions or corrections.
   * `:author` - The author(s) of the sequence.
   * `:created` - The creation timestamp (DateTime).
   * `:time` - The last modification timestamp (DateTime).
@@ -40,6 +48,14 @@ defmodule OEIS.Sequence do
     :example,
     :link,
     :xref,
+    :keyword,
+    :offset,
+    :maple,
+    :mathematica,
+    :program,
+    :revision,
+    :references,
+    :ext,
     :author,
     :created,
     :time

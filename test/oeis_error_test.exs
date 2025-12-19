@@ -3,9 +3,9 @@ defmodule OEIS.ErrorTest do
 
   test "parse_extra_data_line with invalid data" do
     # Use direct private function testing if possible, but OEIS private functions are hard to reach.
-    # We can use apply/3 for private functions if we really want to reach them, 
+    # We can use apply/3 for private functions if we really want to reach them,
     # but it's better to test through public API or by mocking Req.
-    # Since we can't mock Req easily here without adding dependencies, 
+    # Since we can't mock Req easily here without adding dependencies,
     # we'll try to trigger them through search.
     assert {:error, {:bad_param, "Sequence string cannot be empty."}} = OEIS.search(sequence: " ")
 

@@ -17,6 +17,15 @@ defmodule OEIS.HintsTest do
     assert match?([%Sequence{id: "A000055"} | _], results)
   end
 
+  test "search with general string query" do
+    {status, results} = OEIS.search("Fibonacci")
+    assert status in [:single, :multi, :partial]
+    assert Enum.any?(results_as_list(status, results), fn s -> s.id == "A000045" end)
+  end
+
+  defp results_as_list(:single, res), do: [res]
+  defp results_as_list(_, res), do: res
+
   test "truncation to 6 terms works" do
     # 7 terms: 1, 2, 3, 6, 11, 23, 47 -> should be truncated to 6
     # If we provide enough terms that usually match A000055, checking if it still returns valid results

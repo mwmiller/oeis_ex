@@ -11,7 +11,7 @@ Add `oeis` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:oeis, "~> 0.5.0"}
+    {:oeis, "~> 0.6.0"}
   ]
 end
 ```
@@ -39,6 +39,10 @@ iex> OEIS.search(sequence: [1, 2, 3, 6, 11, 23], keyword: "core")
 # Search with an ID string (A-number)
 iex> OEIS.search("A000045")
 {:single, %OEIS.Sequence{id: "A000045", name: "Fibonacci numbers..."}}
+
+# Search with a general string query
+iex> OEIS.search("Fibonacci")
+{:partial, [%OEIS.Sequence{id: "A000045", ...}, ...]}
 
 # Search by author (greedy) and general query
 iex> OEIS.search(author: "Sloane", query: "partitions")

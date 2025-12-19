@@ -4,7 +4,7 @@ defmodule OEIS.MixProject do
   def project do
     [
       app: :oeis,
-      version: "0.5.1",
+      version: "0.6.0",
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       description: "A Req-based client for the On-Line Encyclopedia of Integer Sequences (OEIS).",
