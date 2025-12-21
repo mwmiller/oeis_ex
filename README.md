@@ -11,7 +11,7 @@ Add `oeis` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:oeis, "~> 0.6.0"}
+    {:oeis, "~> 0.6.1"}
   ]
 end
 ```
@@ -52,12 +52,13 @@ iex> OEIS.search(author: "Sloane", query: "partitions")
 ### Advanced Features
 
 #### Fetching More Terms
-OEIS sequences often have limited terms in the primary record. `OEIS.fetch_more_terms/2` fetches the full "b-file" containing many more terms.
+OEIS sequences often have limited terms in the primary record. `OEIS.fetch_more_terms/2` fetches the full "b-file" containing many more terms. It also extracts any comments within the b-file and appends them to the sequence's `comment` list, annotated with their line numbers.
 
 ```elixir
 iex> {:single, seq} = OEIS.search("A000001")
 iex> {:ok, updated_seq} = OEIS.fetch_more_terms(seq)
 # updated_seq.data now contains all terms from the b-file
+# updated_seq.comment now includes annotated comments from the b-file
 ```
 
 #### Fetching Related Sequences

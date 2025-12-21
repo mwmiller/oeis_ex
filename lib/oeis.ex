@@ -98,6 +98,8 @@ defmodule OEIS do
   Fetches extended sequence terms from the associated b-file.
 
   Parses the linked b-file (e.g., `b000001.txt`) to extract additional terms, replacing the existing `data` field.
+  It also extracts any comments within the b-file and appends them to the sequence's `comment` list,
+  annotated with their line numbers (e.g., `[b-file L10] comment`).
 
   ## Options
 
@@ -128,8 +130,9 @@ defmodule OEIS do
 
       %{url: url, text: title} = link ->
         case process_b_file_link(link, url, title, opts) do
-          {:extra_data, data} ->
-            {:ok, %{original_sequence | data: data}}
+          {:extra_data, data, comments} ->
+            updated_comments = (original_sequence.comment || []) ++ comments
+            {:ok, %{original_sequence | data: data, comment: updated_comments}}
 
           {:no_match, message} ->
             {:error, %{original_sequence: original_sequence, message: message}}
@@ -193,11 +196,10 @@ defmodule OEIS do
 
   defp process_b_file_link(%{url: url, text: title}, _url, _title, opts) do
     case fetch_and_parse_extra_data(url, opts) do
-      {:ok, data} ->
+      {:ok, data, comments} ->
         case data do
           [] -> {:no_match, "No integer data extracted from extra data for link: #{title}"}
-          # <--- Modified
-          _ -> {:extra_data, data}
+          _ -> {:extra_data, data, comments}
         end
 
       {:error, reason} ->
@@ -224,22 +226,44 @@ defmodule OEIS do
 
   defp parse_extra_data_content(content) when is_binary(content) do
     lines = String.split(content, ~r/\r?\n/, trim: true)
-    extracted_integers = Enum.flat_map(lines, &parse_extra_data_line/1)
-    {:ok, extracted_integers}
+
+    {integers, comments} =
+      lines
+      |> Enum.with_index(1)
+      |> Enum.reduce({[], []}, fn {line, line_num}, {acc_ints, acc_comments} ->
+        case parse_extra_data_line(line) do
+          {:data, term} ->
+            {[term | acc_ints], acc_comments}
+
+          {:comment, comment_text} ->
+            {acc_ints, ["[b-file L#{line_num}] #{comment_text}" | acc_comments]}
+
+          :ignore ->
+            {acc_ints, acc_comments}
+        end
+      end)
+
+    {:ok, Enum.reverse(integers), Enum.reverse(comments)}
   end
 
   defp parse_extra_data_line(line) do
-    case String.split(line, ~r/\s+/, trim: true) do
-      [_, second_col_str | _] ->
-        case Integer.parse(second_col_str) do
-          {integer, ""} -> [integer]
-          # Not a valid integer, ignore
-          _ -> []
-        end
+    case String.trim(line) do
+      <<"#", comment::binary>> ->
+        {:comment, String.trim(comment)}
 
-      # Line doesn't have at least two columns, ignore
-      _ ->
-        []
+      trimmed ->
+        case String.split(trimmed, ~r/\s+/, trim: true) do
+          [col1, col2 | _] ->
+            with {_, ""} <- Integer.parse(col1),
+                 {term, ""} <- Integer.parse(col2) do
+              {:data, term}
+            else
+              _ -> :ignore
+            end
+
+          _ ->
+            :ignore
+        end
     end
   end
 
