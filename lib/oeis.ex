@@ -20,85 +20,47 @@ defmodule OEIS do
   ]
 
   @doc """
-  Searches the OEIS database.
+  Searches the OEIS database for sequences.
 
-  This function is the main entry point for querying the OEIS. It can be called
-  with a keyword list of search parameters, a raw list of integers (treated as
-  a sequence), or a raw string.
+  The first argument can be:
+  * A string ID (e.g., `"A000055"`).
+  * A list of integers (e.g., `[1, 2, 3, 5, 8]`).
+  * A string of integers (e.g., `"1, 2, 3, 5, 8"` or `"1 2 3 5 8"`).
+  * A keyword list of search parameters (see below).
 
-  When called with a string, it will be treated as an OEIS ID if it matches
-  the `A` number format (e.g., `"A000055"`) or is a plain integer string.
-  If it's a comma-separated or space-separated list of integers, it will be treated
-  as a sequence search. Otherwise, it will be treated as a general query
-  (e.g., `"Fibonacci"`).
+  ## Options
 
-  An optional keyword list of options can be provided as the second argument.
-  Supported options:
-  * `:may_truncate` (boolean): If `true` (default), long sequences (more than 6 terms)
-    will be truncated and leading 0s/1s removed to improve search results. If `false`,
-    the sequence is searched exactly as provided.
-  * `:respect_sign` (boolean): If `true` (default), the search will respect the signs
-    of the numbers in the sequence (using the `signed:` prefix). If `false`,
-    the search will ignore signs (using the `seq:` prefix).
+  * `:may_truncate` (boolean): If `true` (default), sequences longer than 6 terms are truncated and leading 0s/1s removed.
+  * `:respect_sign` (boolean): If `true` (default), respects signs. If `false`, ignores signs.
   * `:timeout` (integer): Request timeout in milliseconds (default: 15,000).
-  * `:max_concurrency` (integer): Concurrency limit for parallel tasks (default: 5).
+  * `:max_concurrency` (integer): Limit for parallel tasks (default: 5).
+  * `:start` (integer): Starting index for results (default: 0).
 
-  On success, returns `{:single, sequence}` for an exact ID match, or `{:multi, list_of_sequences}` for other searches. `list_of_sequences` is a list of `OEIS.Sequence` structs. If no results are found, `{:no_match, "No matches found."}` is returned.
+  ## Parameters (Keyword List)
 
-  If a query returns a full page of results (currently 10 sequences for general
-  searches), it implies there might be more results available. In such cases,
-  a `{:partial, list_of_sequences}` tuple is returned.
+  * `:sequence` (list/string): Terms to search for.
+  * `:id` (string): OEIS A-number.
+  * `:keyword` (string): Filter keyword (e.g., `"core"`).
+  * `:author` (string): Author name (automatically wildcards: `*name*`).
+  * `:query` (string): General query string.
 
-  ## Search Hints
-  * **Term Limit:** Providing too many terms can often lead to no results because the sequence in the database might be shorter or differ slightly. This function automatically truncates long sequences to 6 terms (excluding leading 0s and 1s) to improve match rates.
-  * **Leading Terms:** It is often helpful to omit the first few terms if the sequence has many leading 0s or 1s, or if the starting value is conventional (e.g. starting at n=0 vs n=1).
-  * **Gaps:** If your sequence has many zeros (e.g., `1, 0, 2, 0, 4, 0`), try removing the zeros (`1, 2, 4`) for a better search.
-  * **Formats:** Sequences can be supplied as lists of integers, comma-separated strings, or space-separated strings.
+  ## Returns
 
-  ## Parameters
-
-  When called with a keyword list, the following keys are accepted:
-
-  * `:sequence` (list of integers, or a string): A list of terms in the sequence to search for.
-    If the sequence has more than 6 terms, it will be automatically adjusted: leading 0s and 1s
-    will be removed, and if it remains longer than 6 terms, it will be truncated to the first 6 terms.
-    * Example: `[1, 2, 3, 6, 11, 23]`, `"1,2,3,6,11,23"`, or `"1 2 3 6 11 23"`
-  * `:id` (string): An OEIS A-number to search for.
-    * Example: `"A000055"`
-  * `:keyword` (string): A keyword to filter results.
-    * Example: `"core"`
-  * `:author` (string): An author's name to filter results. The search is
-    automatically made greedy by surrounding the name with `*`.
-    * Example: `"Sloane"`
-  * `:query` (string): A general query string for other search terms.
-    * Example: `"number of partitions"`
-  * `:start` (integer): The starting index for results, used for pagination.
-    * Default is 0.
+  * `{:single, sequence}`: Exact ID match.
+  * `{:multi, [sequence]}`: Multiple matches found.
+  * `{:partial, [sequence]}`: Partial results (more likely available).
+  * `{:no_match, message}`: No results found.
 
   ## Examples
 
       iex> OEIS.search("A000045")
-      {:single, %OEIS.Sequence{id: "A000045", name: "Fibonacci numbers." <> _}}
+      {:single, %OEIS.Sequence{id: "A000045", ...}}
 
       iex> OEIS.search([1, 2, 3, 5, 8])
-      {:multi, [%OEIS.Sequence{id: "A000045", name: "Fibonacci numbers." <> _}]}
-
-      iex> OEIS.search(query: "non-existent query")
-      {:no_match, "No matches found."}
+      {:multi, [%OEIS.Sequence{id: "A000045", ...}]}
 
       iex> OEIS.search(author: "Sloane", keyword: "core", start: 10)
-      {:partial, list_of_sequences}
-
-      iex> {:partial, sequences} = OEIS.search(sequence: [1, 2, 3])
-      iex> length(sequences)
-      10
-
-      # A broad query like "prime number" often returns no results from the JSON API,
-      # which now translates to `{:no_match, "No matches found."}`. The OEIS JSON API
-      # currently does not provide a distinct indicator for "too many results"
-      # versus "no results" in its JSON response.
-      iex> OEIS.search(query: "prime number")
-      {:no_match, "No matches found."}
+      {:partial, [...]}
   """
   def search(query, options \\ [])
 
@@ -133,33 +95,23 @@ defmodule OEIS do
   end
 
   @doc """
-  Fetches more terms for an OEIS sequence from its associated "b-file".
+  Fetches extended sequence terms from the associated b-file.
 
-  This function takes an `OEIS.Sequence` struct, identifies the single link pointing to
-  an `oeis.org/.../b<A-number>.txt` file (which contains the extra data), fetches its content, and extracts
-  the integer values from the second column of each line. The leading index column
-  in these `.txt` files is ignored. The fetched terms replace the existing ones in the sequence.
-
-  Returns `{:ok, updated_sequence}` on success, where `updated_sequence` is the
-  original sequence with its `data` field updated with the new terms.
-  Returns `{:error, %{original_sequence: original, message: error_message}}` on failure,
-  including cases where no extra data link is found, no integer data can be extracted,
-  or an HTTP request/parsing error occurs.
-
-  ## Parameters
-  * `sequence` (OEIS.Sequence): The OEIS sequence struct containing links.
+  Parses the linked b-file (e.g., `b000001.txt`) to extract additional terms, replacing the existing `data` field.
 
   ## Options
+
   * `:timeout` (integer): Request timeout in milliseconds (default: 15,000).
-  * `:max_concurrency` (integer): Concurrency limit for parallel tasks (default: 5).
+
+  ## Returns
+
+  * `{:ok, updated_sequence}`: Success.
+  * `{:error, %{original_sequence: seq, message: msg}}`: Failure.
 
   ## Examples
-      iex> OEIS.search("A000001")
-      ...> |> case do
-      ...>   {:single, seq} -> OEIS.fetch_more_terms(seq)
-      ...>   _ -> {:error, %{message: "Sequence not found"}}
-      ...> end
-      {:ok, %OEIS.Sequence{id: "A000001", data: [0, 1, 1, 2, 1, 2, 2, 1, 5, 2, 2, ...]}} # Example shortened
+
+      iex> {:single, seq} = OEIS.search("A000001")
+      iex> {:ok, updated} = OEIS.fetch_more_terms(seq)
   """
   def fetch_more_terms(sequence, options \\ [])
 
@@ -193,22 +145,21 @@ defmodule OEIS do
   end
 
   @doc """
-  Fetches the sequence definitions for the IDs listed in the sequence's `xref` field.
-
-  This function extracts OEIS IDs (e.g., "A000045") from the cross-reference strings
-  and performs parallel searches for each ID found.
-  It uses `Task.async_stream/4` to fetch them concurrently.
+  Fetches sequences referenced in the `xref` field concurrently.
 
   ## Options
+
   * `:timeout` (integer): Request timeout in milliseconds (default: 15,000).
   * `:max_concurrency` (integer): Concurrency limit for parallel tasks (default: 5).
+
+  ## Returns
+
+  * `[sequence]`: List of successfully fetched `OEIS.Sequence` structs.
 
   ## Examples
 
       iex> {:single, seq} = OEIS.search("A000045")
-      iex> related_sequences = OEIS.fetch_xrefs(seq, max_concurrency: 3)
-      iex> Enum.map(related_sequences, & &1.id)
-      ["A000032", "A001622", ...] # List of related IDs
+      iex> refs = OEIS.fetch_xrefs(seq)
   """
   def fetch_xrefs(sequence, options \\ [])
 
