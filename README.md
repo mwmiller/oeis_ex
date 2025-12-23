@@ -1,4 +1,9 @@
-# OEIS.ex
+# Elixir OEIS
+
+[![Hex.pm](https://img.shields.io/hexpm/v/oeis.svg)](https://hex.pm/packages/oeis)
+[![Documentation](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/oeis)
+[![License](https://img.shields.io/hexpm/l/oeis.svg)](https://github.com/mwmiller/oeis_ex/blob/main/LICENSE)
+[![Try it in Livebook](https://livebook.dev/badge/v1/blue.svg)](https://livebook.dev/run?url=https%3A%2F%2Fgithub.com%2Fmwmiller%2Foeis_ex%2Fblob%2Fmain%2Flivebooks%2Foeis_demo.livemd)
 
 An Elixir client for the On-Line Encyclopedia of Integer Sequences (OEIS).
 
@@ -11,7 +16,7 @@ Add `oeis` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:oeis, "~> 0.6.1"}
+    {:oeis, "~> 0.6.2"}
   ]
 end
 ```
@@ -86,9 +91,12 @@ Most functions accept a standard set of options:
 * `:max_concurrency` (integer): Concurrency limit for parallel tasks (default: 5).
 * `:may_truncate` (boolean): Whether to truncate long sequences in search (default: true).
 * `:respect_sign` (boolean): Whether search should respect sequence signs (default: true).
+* `:start` (integer): Starting index for search results (default: 0).
 
 ## Documentation
 
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/oeis>.
+Documentation is available at <https://hexdocs.pm/oeis>.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

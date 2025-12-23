@@ -4,14 +4,14 @@ defmodule OEIS.MixProject do
   def project do
     [
       app: :oeis,
-      version: "0.6.1",
+      version: "0.6.2",
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       description: "A Req-based client for the On-Line Encyclopedia of Integer Sequences (OEIS).",
       package: [
         files: ["lib", "mix.exs", "README*", "LICENSE*"],
         maintainers: ["Matt Miller"],
-        licenses: ["Apache-2.0"],
+        licenses: ["MIT"],
         links: %{"GitHub" => "https://github.com/mwmiller/oeis_ex", "OEIS" => "https://oeis.org/"}
       ],
       deps: deps()

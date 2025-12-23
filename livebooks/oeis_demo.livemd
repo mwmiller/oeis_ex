@@ -1,0 +1,139 @@
+# OEIS Demo
+
+```elixir
+Mix.install([
+  {:oeis, "~> 0.6.2"},
+  {:kino, "~> 0.14.0"},
+  {:kino_vega_lite, "~> 0.1.13"}
+])
+```
+
+## Introduction
+
+This notebook demonstrates the capabilities of the `oeis` Elixir library, a client for the [On-Line Encyclopedia of Integer Sequences (OEIS)](https://oeis.org/).
+
+## Basic Search
+
+The core function is `OEIS.search/2`. It handles various input types: ID strings, lists of integers, or keyword searches.
+
+### Searching by ID
+
+Let's search for the famous Fibonacci numbers (A000045).
+
+```elixir
+"A000045"
+|> OEIS.search()
+|> then(fn {:single, seq} -> seq end)
+|> tap(fn seq -> IO.puts("Found: #{seq.name}") end)
+|> Enum.with_index()
+|> Enum.map(fn {val, idx} -> %{index: idx, value: val} end)
+|> Kino.DataTable.new()
+```
+
+> **Note:** Notice how we piped the `seq` struct directly into `Enum.with_index/1`. `OEIS.Sequence` implements the `Enumerable` protocol, allowing you to treat the struct as a collection of its sequence data.
+
+### Searching by Sequence
+
+You can search by providing a list of integers.
+
+```elixir
+# Searching for Catalan numbers: 1, 1, 2, 5, 14
+[1, 1, 2, 5, 14]
+|> OEIS.search()
+|> elem(1)
+|> List.first()
+```
+
+### Searching by Keyword/Author
+
+```elixir
+[author: "Sloane", keyword: "core"]
+|> OEIS.search()
+|> then(fn {_status, search_results} -> search_results end)
+|> Enum.map(fn seq ->
+  %{id: seq.id, name: seq.name, author: seq.author}
+end)
+|> Kino.DataTable.new()
+```
+
+## Fetching More Data
+
+Standard search results typically contain a limited number of terms (usually the first few). You can fetch the full "b-file" for more terms.
+
+```elixir
+# Let's take the first result from our previous search
+{:partial, search_results} = OEIS.search(author: "Sloane", keyword: "core")
+
+expanded_seq =
+  search_results
+  |> List.first()
+  |> tap(fn seq -> IO.puts("Original count: #{Enum.count(seq)}") end)
+  |> OEIS.fetch_more_terms()
+  |> then(fn {:ok, seq} -> seq end)
+  |> tap(fn seq -> IO.puts("New count: #{Enum.count(seq)}") end)
+```
+
+Let's visualize the growth of this sequence! Since the sequence is `Enumerable`, we can pipe it directly into our data transformation.
+
+```elixir
+expanded_seq
+|> Enum.with_index()
+|> Enum.map(fn {y, x} -> %{"x" => x, "y" => y} end)
+|> then(fn data_points ->
+  VegaLite.new(width: 600, height: 400)
+  |> VegaLite.data_from_values(data_points, only: ["x", "y"])
+  |> VegaLite.mark(:line)
+  |> VegaLite.encode_field(:x, "x", type: :quantitative, title: "Index")
+  |> VegaLite.encode_field(:y, "y", type: :quantitative, title: "Value")
+end)
+|> Kino.VegaLite.new()
+```
+
+## Interactive Search Tool
+
+Try searching for a sequence yourself! Enter a search query (ID, name, or numbers separated by commas).
+
+```elixir
+input = Kino.Input.text("Search Query")
+form = Kino.Control.form([query: input], submit: "Search")
+frame = Kino.Frame.new()
+
+Kino.listen(form, fn %{data: %{query: query}} ->
+  Kino.Frame.render(frame, Kino.Text.new("Searching..."))
+
+  # Determine if input is a list of numbers or a string
+  search_arg =
+    if Regex.match?(~r/^[\d\s,]+$/, query) do
+      query
+      |> String.split([",", " "], trim: true)
+      |> Enum.map(&String.to_integer/1)
+    else
+      query
+    end
+
+  search_arg
+  |> OEIS.search()
+  |> case do
+    {:single, seq} ->
+      [
+        {"Info", Kino.Tree.new(seq)},
+        {"Data", seq |> Enum.join(", ") |> Kino.Text.new()}
+      ]
+      |> Kino.Layout.tabs()
+
+    {_status, seqs} when is_list(seqs) ->
+      seqs
+      |> Enum.map(& %{id: &1.id, name: &1.name})
+      |> Kino.DataTable.new()
+
+    {:no_match, msg} ->
+      Kino.Text.new(msg)
+
+    error ->
+      "Error: #{inspect(error)}" |> Kino.Text.new()
+  end
+  |> then(&Kino.Frame.render(frame, &1))
+end)
+
+Kino.Layout.grid([form, frame], columns: 1)
+```
