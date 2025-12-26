@@ -14,7 +14,14 @@ defmodule OEIS.MixProject do
         licenses: ["MIT"],
         links: %{"GitHub" => "https://github.com/mwmiller/oeis_ex", "OEIS" => "https://oeis.org/"}
       ],
-      deps: deps()
+      deps: deps(),
+      aliases: aliases()
+    ]
+  end
+
+  def cli do
+    [
+      preferred_envs: [precommit: :test]
     ]
   end
 
@@ -31,6 +38,12 @@ defmodule OEIS.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:req, "~> 0.5"}
+    ]
+  end
+
+  defp aliases do
+    [
+      precommit: ["format --check-formatted", "test --raise", "credo --strict"]
     ]
   end
 end
