@@ -14,6 +14,10 @@ defmodule OEIS.MixProject do
         licenses: ["MIT"],
         links: %{"GitHub" => "https://github.com/mwmiller/oeis_ex", "OEIS" => "https://oeis.org/"}
       ],
+      docs: [
+        main: "oeis_demo",
+        extras: ["livebooks/oeis_demo.livemd", "LICENSE"]
+      ],
       deps: deps(),
       aliases: aliases()
     ]

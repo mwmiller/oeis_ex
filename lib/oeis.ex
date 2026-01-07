@@ -1,6 +1,6 @@
 defmodule OEIS do
   @moduledoc """
-  A client for the On-Line Encyclopedia of Integer Sequences (OEIS).
+  A client for the [On-Line Encyclopedia of Integer Sequences (OEIS)](https://oeis.org).
   """
 
   alias OEIS.Sequence
@@ -30,7 +30,7 @@ defmodule OEIS do
 
   ## Options
 
-  * `:may_truncate` (boolean): If `true` (default), sequences longer than 6 terms are truncated and leading 0s/1s removed.
+  * `:may_truncate` (boolean): If `true` (default), truncates the provided terms and removes leading 0s/1s to increase the chances of a match.
   * `:respect_sign` (boolean): If `true` (default), respects signs. If `false`, ignores signs.
   * `:timeout` (integer): Request timeout in milliseconds (default: 15,000).
   * `:max_concurrency` (integer): Limit for parallel tasks (default: 5).
@@ -476,6 +476,8 @@ defmodule OEIS do
     do:
       {:error, {:bad_param, "Unsupported option: #{inspect(key)} with value: #{inspect(value)}."}}
 
+  # Truncates the provided terms and removes leading 0s/1s to increase the
+  # chances of a match when searching by sequence.
   defp truncate_sequence_list(list) do
     case length(list) <= @max_sequence_terms do
       true ->

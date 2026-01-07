@@ -10,31 +10,34 @@ Mix.install([
 
 ## Introduction
 
-This notebook demonstrates the capabilities of the `oeis` Elixir library, a client for the [On-Line Encyclopedia of Integer Sequences (OEIS)](https://oeis.org/).
+This notebook serves as an interactive guide to the `oeis` Elixir library. We will explore how to search the [On-Line Encyclopedia of Integer Sequences (OEIS)](https://oeis.org), retrieve detailed data, and visualize the results.
 
 ## Basic Search
 
-The core function is `OEIS.search/2`. It handles various input types: ID strings, lists of integers, or keyword searches.
+The primary entry point is the `OEIS.search/2` function. It is designed to be flexible, accepting sequence IDs, lists of integers, or keyword queries.
 
 ### Searching by ID
 
-Let's search for the famous Fibonacci numbers (A000045).
+We will start by examining **Recamán's sequence (A005132)**. This sequence is known for its non-monotonic, "hopping" behavior, which makes it particularly interesting to analyze.
 
 ```elixir
-"A000045"
-|> OEIS.search()
-|> then(fn {:single, seq} -> seq end)
-|> tap(fn seq -> IO.puts("Found: #{seq.name}") end)
+recaman_seq =
+  "A005132"
+  |> OEIS.search()
+  |> then(fn {:single, seq} -> seq end)
+  |> tap(fn seq -> IO.puts("Found: #{seq.name}") end)
+
+recaman_seq
 |> Enum.with_index()
 |> Enum.map(fn {val, idx} -> %{index: idx, value: val} end)
 |> Kino.DataTable.new()
 ```
 
-> **Note:** Notice how we piped the `seq` struct directly into `Enum.with_index/1`. `OEIS.Sequence` implements the `Enumerable` protocol, allowing you to treat the struct as a collection of its sequence data.
+> **Note:** The `OEIS.Sequence` struct implements the `Enumerable` protocol. This means you can pipe it directly into functions like `Enum.with_index/1`, treating the sequence object as if it were a simple list of its terms.
 
 ### Searching by Sequence
 
-You can search by providing a list of integers.
+If you have a list of numbers and want to identify the sequence, you can pass the list directly to the search function.
 
 ```elixir
 # Searching for Catalan numbers: 1, 1, 2, 5, 14
@@ -45,6 +48,8 @@ You can search by providing a list of integers.
 ```
 
 ### Searching by Keyword/Author
+
+You can also filter results by author or keyword. For instance, here is how to find sequences authored by Neil Sloane that are tagged with the "core" keyword.
 
 ```elixir
 [author: "Sloane", keyword: "core"]
@@ -58,40 +63,70 @@ end)
 
 ## Fetching More Data
 
-Standard search results typically contain a limited number of terms (usually the first few). You can fetch the full "b-file" for more terms.
+Search results usually provide just a glimpse of the sequence—typically the first few dozen terms. To truly understand the behavior of a sequence like Recamán's, we need a larger dataset.
+
+We can use `OEIS.fetch_more_terms/2` to retrieve the full "b-file" from the OEIS, which often contains thousands of terms. This allows us to see the bigger picture.
 
 ```elixir
-# Let's take the first result from our previous search
-{:partial, search_results} = OEIS.search(author: "Sloane", keyword: "core")
-
 expanded_seq =
-  search_results
-  |> List.first()
+  recaman_seq
   |> tap(fn seq -> IO.puts("Original count: #{Enum.count(seq)}") end)
   |> OEIS.fetch_more_terms()
   |> then(fn {:ok, seq} -> seq end)
   |> tap(fn seq -> IO.puts("New count: #{Enum.count(seq)}") end)
 ```
 
-Let's visualize the growth of this sequence! Since the sequence is `Enumerable`, we can pipe it directly into our data transformation.
+Now, let's visualize this data. By plotting the sequence, we can move beyond abstract numbers and observe the beautiful, chaotic structure that emerges to clearly see the individual steps.
 
 ```elixir
 expanded_seq
 |> Enum.with_index()
 |> Enum.map(fn {y, x} -> %{"x" => x, "y" => y} end)
 |> then(fn data_points ->
-  VegaLite.new(width: 600, height: 400)
+  VegaLite.new(width: 800, height: 400)
   |> VegaLite.data_from_values(data_points, only: ["x", "y"])
-  |> VegaLite.mark(:line)
+  |> VegaLite.mark(:line, point: true, tooltip: true)
   |> VegaLite.encode_field(:x, "x", type: :quantitative, title: "Index")
   |> VegaLite.encode_field(:y, "y", type: :quantitative, title: "Value")
 end)
 |> Kino.VegaLite.new()
 ```
 
+## Fetching Related Sequences
+
+Mathematics is all about connections. Sequences in the OEIS often reference other related sequences. For example, Recamán's sequence might be related to other recurrence relations or number theoretic properties.
+
+The `OEIS.fetch_xrefs/2` function parses these cross-references and fetches their definitions for you, automatically handling the network requests in parallel.
+
+```elixir
+# Fetch sequences related to Recamán's sequence (A005132)
+# We use the recaman_seq variable from earlier
+related_sequences = OEIS.fetch_xrefs(recaman_seq, max_concurrency: 5)
+
+related_sequences
+|> Enum.map(fn seq -> %{id: seq.id, name: seq.name} end)
+|> Kino.DataTable.new()
+```
+
+## Standardized Options
+
+To give you precise control over your queries, most functions in this library support a consistent set of options. Here is how you can tune the behavior:
+
+* `:timeout` - The maximum time (in milliseconds) to wait for a response from the OEIS server. Default is 15,000ms.
+* `:max_concurrency` - When fetching multiple items (like related sequences), this limits how many requests happen at once. Default is 5.
+* `:may_truncate` - If set to `true` (the default), the library will truncate the provided terms and remove leading 0s or 1s. This often increases the chances of finding a match when you only have a partial or slightly different sequence of terms.
+* `:respect_sign` - When searching by a list of numbers, this determines if negative signs matter. Default is `true`.
+* `:start` - The zero-based index of the first result to return. Useful for paging through many results. Default is 0.
+
 ## Interactive Search Tool
 
-Try searching for a sequence yourself! Enter a search query (ID, name, or numbers separated by commas).
+Now it is your turn to explore. Use the form below to perform your own searches. You can try:
+
+* **An ID:** "A000032" (Lucas numbers)
+* **A name:** "Lucas numbers"
+* **A list of terms:** "1, 2, 3, 6, 11, 23"
+
+Experiment with different queries to see what you can discover!
 
 ```elixir
 input = Kino.Input.text("Search Query")
@@ -121,9 +156,9 @@ Kino.listen(form, fn %{data: %{query: query}} ->
       ]
       |> Kino.Layout.tabs()
 
-    {_status, seqs} when is_list(seqs) ->
+    {status, seqs} when status in [:multi, :partial] ->
       seqs
-      |> Enum.map(& %{id: &1.id, name: &1.name})
+      |> Enum.map(&%{id: &1.id, name: &1.name})
       |> Kino.DataTable.new()
 
     {:no_match, msg} ->

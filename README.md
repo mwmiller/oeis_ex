@@ -3,9 +3,8 @@
 [![Hex.pm](https://img.shields.io/hexpm/v/oeis.svg)](https://hex.pm/packages/oeis)
 [![Documentation](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/oeis)
 [![License](https://img.shields.io/hexpm/l/oeis.svg)](https://github.com/mwmiller/oeis_ex/blob/main/LICENSE)
-[![Try it in Livebook](https://livebook.dev/badge/v1/blue.svg)](https://livebook.dev/run?url=https%3A%2F%2Fgithub.com%2Fmwmiller%2Foeis_ex%2Fblob%2Fmain%2Flivebooks%2Foeis_demo.livemd)
 
-An Elixir client for the On-Line Encyclopedia of Integer Sequences (OEIS).
+An Elixir client for the [On-Line Encyclopedia of Integer Sequences (OEIS)](https://oeis.org).
 
 This library provides a convenient way to search the OEIS database for integer sequences.
 
@@ -89,7 +88,7 @@ iex> Enum.take(seq, 5)
 Most functions accept a standard set of options:
 * `:timeout` (integer): Request timeout in milliseconds (default: 15,000).
 * `:max_concurrency` (integer): Concurrency limit for parallel tasks (default: 5).
-* `:may_truncate` (boolean): Whether to truncate long sequences in search (default: true).
+* `:may_truncate` (boolean): Whether to truncate provided terms to increase the chances of a match (default: true).
 * `:respect_sign` (boolean): Whether search should respect sequence signs (default: true).
 * `:start` (integer): Starting index for search results (default: 0).
 
