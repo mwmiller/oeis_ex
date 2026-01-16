@@ -314,10 +314,9 @@ defmodule OEIS do
     {terms_opts, actual_terms} = Keyword.split(terms, @search_options)
     opts = options |> Keyword.merge(terms_opts) |> ensure_options()
 
-    if opts[:stream] do
-      stream_search(actual_terms, opts)
-    else
-      fetch_page(actual_terms, opts)
+    case opts[:stream] do
+      true -> stream_search(actual_terms, opts)
+      _ -> fetch_page(actual_terms, opts)
     end
   end
 
