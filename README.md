@@ -66,12 +66,15 @@ iex> {:ok, updated_seq} = OEIS.fetch_more_terms(seq)
 ```
 
 #### Fetching Related Sequences
-`OEIS.fetch_xrefs/2` extracts OEIS IDs from the cross-references field and fetches the full sequence definitions in parallel.
+`OEIS.fetch_xrefs/2` extracts OEIS IDs from the cross-references field and fetches the full sequence definitions in parallel. It also supports streaming for sequences with many references.
 
 ```elixir
 iex> {:single, seq} = OEIS.search("A000045")
 iex> related = OEIS.fetch_xrefs(seq, max_concurrency: 5)
 # related is a list of OEIS.Sequence structs for Lucas numbers, etc.
+
+# Or stream them
+iex> OEIS.fetch_xrefs(seq, stream: true) |> Enum.take(5)
 ```
 
 #### Enumerable Sequences

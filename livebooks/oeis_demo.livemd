@@ -123,6 +123,19 @@ related_sequences
 |> Kino.DataTable.new()
 ```
 
+For sequences with a large number of cross-references, you can also use `stream: true` to process them lazily.
+
+```elixir
+# Lazily fetch the first 5 sequences related to Fibonacci (A000045)
+"A000045"
+|> OEIS.search()
+|> then(fn {:single, seq} -> seq end)
+|> OEIS.fetch_xrefs(stream: true)
+|> Stream.take(5)
+|> Enum.map(fn seq -> %{id: seq.id, name: seq.name} end)
+|> Kino.DataTable.new()
+```
+
 ## Standardized Options
 
 To give you precise control over your queries, most functions in this library support a consistent set of options. Here is how you can tune the behavior:
