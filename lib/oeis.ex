@@ -168,10 +168,12 @@ defmodule OEIS do
 
   * `:timeout` (integer): Request timeout in milliseconds (default: 15,000).
   * `:max_concurrency` (integer): Concurrency limit for parallel tasks (default: 5).
+  * `:stream` (boolean): If `true`, returns an Elixir Stream that lazily fetches and emits results (default: `false`).
 
   ## Returns
 
   * `[sequence]`: List of successfully fetched `OEIS.Sequence` structs.
+  * `Enumerable.t()`: A stream of `OEIS.Sequence` structs if `stream: true`.
 
   ## Examples
 
@@ -185,23 +187,29 @@ defmodule OEIS do
     max_concurrency = opts[:max_concurrency]
     timeout = opts[:timeout]
 
-    xref
-    |> extract_xref_ids()
-    |> Task.async_stream(
-      fn id ->
-        case search(id) do
-          {:single, seq} -> seq
-          _ -> nil
-        end
-      end,
-      max_concurrency: max_concurrency,
-      timeout: timeout
-    )
-    |> Enum.map(fn
-      {:ok, result} -> result
-      _ -> nil
-    end)
-    |> Enum.reject(&is_nil/1)
+    stream =
+      xref
+      |> extract_xref_ids()
+      |> Task.async_stream(
+        fn id ->
+          case search(id) do
+            {:single, seq} -> seq
+            _ -> nil
+          end
+        end,
+        max_concurrency: max_concurrency,
+        timeout: timeout
+      )
+      |> Stream.map(fn
+        {:ok, result} -> result
+        _ -> nil
+      end)
+      |> Stream.reject(&is_nil/1)
+
+    case opts[:stream] do
+      true -> stream
+      _ -> Enum.to_list(stream)
+    end
   end
 
   def fetch_xrefs(_other, _options) do

@@ -210,4 +210,15 @@ defmodule OEIS.IntegrationTest do
     assert {:error, %{message: "Input must be an OEIS.Sequence struct."}} =
              OEIS.fetch_xrefs("not a sequence")
   end
+
+  test "fetch_xrefs with stream: true returns a stream" do
+    {:single, seq} = OEIS.search("A000045")
+    stream = OEIS.fetch_xrefs(seq, stream: true)
+
+    assert Enumerable.impl_for(stream)
+
+    results = Enum.take(stream, 3)
+    assert length(results) == 3
+    assert Enum.all?(results, fn s -> match?(%Sequence{}, s) end)
+  end
 end
