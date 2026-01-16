@@ -19,6 +19,15 @@ defmodule OEIS do
     :xref
   ]
 
+  @search_options [
+    :may_truncate,
+    :respect_sign,
+    :timeout,
+    :max_concurrency,
+    :start,
+    :stream
+  ]
+
   @doc """
   Searches the OEIS database for sequences.
 
@@ -35,6 +44,7 @@ defmodule OEIS do
   * `:timeout` (integer): Request timeout in milliseconds (default: 15,000).
   * `:max_concurrency` (integer): Limit for parallel tasks (default: 5).
   * `:start` (integer): Starting index for results (default: 0).
+  * `:stream` (boolean): If `true`, returns an Elixir Stream that lazily fetches and emits results (default: `false`).
 
   ## Parameters (Keyword List)
 
@@ -61,6 +71,9 @@ defmodule OEIS do
 
       iex> OEIS.search(author: "Sloane", keyword: "core", start: 10)
       {:partial, [...]}
+
+      iex> OEIS.search(query: "partitions", stream: true)
+      #Stream<...>
   """
   def search(query, options \\ [])
 
@@ -87,7 +100,8 @@ defmodule OEIS do
     may_truncate: true,
     respect_sign: true,
     max_concurrency: 5,
-    timeout: 15_000
+    timeout: 15_000,
+    stream: false
   ]
 
   defp ensure_options(opts) do
@@ -289,16 +303,23 @@ defmodule OEIS do
   end
 
   defp do_search(terms, options) do
-    opts = ensure_options(options)
+    {terms_opts, actual_terms} = Keyword.split(terms, @search_options)
+    opts = options |> Keyword.merge(terms_opts) |> ensure_options()
 
+    if opts[:stream] do
+      stream_search(actual_terms, opts)
+    else
+      fetch_page(actual_terms, opts)
+    end
+  end
+
+  defp fetch_page(terms, opts) do
     case Keyword.fetch(terms, :id) do
       {:ok, id} ->
         case make_id_request(id, opts) do
           {:ok, decoded_json_body} -> handle_oeis_response(decoded_json_body)
           err -> err
         end
-
-      # This is the general search branch
 
       :error ->
         with {:ok, query_params} <- build_query_string(terms, opts),
@@ -311,6 +332,26 @@ defmodule OEIS do
     end
   end
 
+  defp stream_search(terms, opts) do
+    Stream.resource(
+      fn -> opts[:start] || 0 end,
+      fn
+        :done ->
+          {:halt, :done}
+
+        current_start ->
+          case fetch_page(terms, Keyword.put(opts, :start, current_start)) do
+            {:partial, results} -> {results, current_start + 10}
+            {:multi, results} -> {results, :done}
+            {:single, result} -> {[result], :done}
+            {:no_match, _} -> {[], :done}
+            _ -> {:halt, :done}
+          end
+      end,
+      fn _ -> :ok end
+    )
+  end
+
   defp make_id_request(id, opts) do
     url = Path.join(@base_url, id)
     make_request(url, [fmt: "json"], opts)
@@ -318,8 +359,7 @@ defmodule OEIS do
 
   defp build_query_string(terms, opts) do
     with {:ok, query_map} <- build_base_query_map(terms, opts) do
-      start_param = Keyword.get(opts, :start) || Keyword.get(terms, :start)
-      handle_start_param(query_map, start_param)
+      handle_start_param(query_map, opts[:start])
     end
   end
 
@@ -346,18 +386,12 @@ defmodule OEIS do
   defp do_build_query_terms([head | tail], opts, {:ok, acc_terms}) do
     {key, value} = head
 
-    case key do
-      :start ->
-        do_build_query_terms(tail, opts, {:ok, acc_terms})
+    case add_query_term(acc_terms, opts, key, value) do
+      {:ok, new_acc_terms} ->
+        do_build_query_terms(tail, opts, {:ok, new_acc_terms})
 
-      _ ->
-        case add_query_term(acc_terms, opts, key, value) do
-          {:ok, new_acc_terms} ->
-            do_build_query_terms(tail, opts, {:ok, new_acc_terms})
-
-          {:error, _} = err ->
-            err
-        end
+      {:error, _} = err ->
+        err
     end
   end
 
