@@ -9,7 +9,7 @@ defmodule OEIS.MixProject do
       start_permanent: Mix.env() == :prod,
       description: "A Req-based client for the On-Line Encyclopedia of Integer Sequences (OEIS).",
       package: [
-        files: ["lib", "mix.exs", "README*", "LICENSE*"],
+        files: ["lib", "mix.exs", "README*", "LICENSE*", "usage-rules.md"],
         maintainers: ["Matt Miller"],
         licenses: ["MIT"],
         links: %{"GitHub" => "https://github.com/mwmiller/oeis_ex", "OEIS" => "https://oeis.org/"}
@@ -39,6 +39,7 @@ defmodule OEIS.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:usage_rules, "~> 0.1", only: [:dev]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:req, "~> 0.5"}
