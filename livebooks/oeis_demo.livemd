@@ -2,7 +2,7 @@
 
 ```elixir
 Mix.install([
-  {:oeis, "~> 0.6.2"},
+  {:oeis, "~> 0.7.0"},
   {:kino, "~> 0.14.0"},
   {:kino_vega_lite, "~> 0.1.13"}
 ])
@@ -58,6 +58,21 @@ You can also filter results by author or keyword. For instance, here is how to f
 |> Enum.map(fn seq ->
   %{id: seq.id, name: seq.name, author: seq.author}
 end)
+|> Kino.DataTable.new()
+```
+
+## Streaming Results
+
+For queries that may return a large number of results, the library provides a streaming interface. By passing `stream: true`, `OEIS.search/2` returns a lazy `Stream` that fetches results in pages of 10 as you consume them.
+
+This is particularly useful for building UIs that support infinite scrolling or for processing large numbers of sequences without loading them all into memory at once.
+
+```elixir
+# Lazily fetch the first 25 sequences related to "fib"
+"fib"
+|> OEIS.search(stream: true)
+|> Stream.take(25)
+|> Enum.map(fn seq -> %{id: seq.id, name: seq.name} end)
 |> Kino.DataTable.new()
 ```
 
@@ -117,6 +132,7 @@ To give you precise control over your queries, most functions in this library su
 * `:may_truncate` - If set to `true` (the default), the library will truncate the provided terms and remove leading 0s or 1s. This often increases the chances of finding a match when you only have a partial or slightly different sequence of terms.
 * `:respect_sign` - When searching by a list of numbers, this determines if negative signs matter. Default is `true`.
 * `:start` - The zero-based index of the first result to return. Useful for paging through many results. Default is 0.
+* `:stream` - If `true`, returns an Elixir Stream that lazily fetches and emits results. Default is `false`.
 
 ## Interactive Search Tool
 
