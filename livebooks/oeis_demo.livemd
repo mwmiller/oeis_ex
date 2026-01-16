@@ -2,7 +2,7 @@
 
 ```elixir
 Mix.install([
-  {:oeis, "~> 0.7.0"},
+  {:oeis, "~> 0.7.1"},
   {:kino, "~> 0.14.0"},
   {:kino_vega_lite, "~> 0.1.13"}
 ])

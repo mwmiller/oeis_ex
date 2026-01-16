@@ -15,7 +15,7 @@ Add `oeis` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:oeis, "~> 0.6.2"}
+    {:oeis, "~> 0.7.1"}
   ]
 end
 ```
