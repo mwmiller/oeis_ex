@@ -57,7 +57,7 @@ defmodule OEIS.IntegrationTest do
               keyword: ["nice", "nonn"],
               offset: {1, 1},
               revision: 118,
-              references: 80,
+              references: 81,
               ext: ["More terms from _Erich Friedman_"]
             }} = OEIS.search("A037074")
   end
