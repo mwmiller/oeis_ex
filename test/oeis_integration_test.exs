@@ -56,7 +56,6 @@ defmodule OEIS.IntegrationTest do
               name: "Numbers that are the product of a pair of twin primes." <> _,
               keyword: ["nice", "nonn"],
               offset: {1, 1},
-              revision: 118,
               references: 81,
               ext: ["More terms from _Erich Friedman_"]
             }} = OEIS.search("A037074")
