@@ -1,7 +1,6 @@
 defmodule OEIS.IntegrationTest do
   use ExUnit.Case, async: true
   alias OEIS.Sequence
-  require ExUnit.CaptureLog
 
   @moduletag :external
 

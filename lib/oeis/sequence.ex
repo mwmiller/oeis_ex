@@ -15,7 +15,7 @@ defmodule OEIS.Sequence do
   * `:link` - A list of links (maps with :url and :text keys).
   * `:xref` - A list of cross-references to other sequences.
   * `:keyword` - A list of keywords associated with the sequence (e.g., ["core", "nice"]).
-  * `:offset` - A tuple of two integers `{subscript, sort_term}` where `subscript` is the index of the first term.
+  * `:offset` - A tuple of two integers `{subscript, sort_term}` where `subscript` is the index of the first term, or `nil` if the offset could not be parsed.
   * `:maple` - A list of Maple code snippets.
   * `:mathematica` - A list of Mathematica code snippets.
   * `:program` - A list of code snippets in other languages.

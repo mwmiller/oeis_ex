@@ -7,6 +7,7 @@ defmodule OEIS do
 
   @base_url "https://oeis.org"
   @max_sequence_terms 6
+  @oeis_page_size 10
 
   @string_fields [
     :keyword,
@@ -348,7 +349,7 @@ defmodule OEIS do
 
         current_start ->
           case fetch_page(terms, Keyword.put(opts, :start, current_start)) do
-            {:partial, results} -> {results, current_start + 10}
+            {:partial, results} -> {results, current_start + @oeis_page_size}
             {:multi, results} -> {results, :done}
             {:single, result} -> {[result], :done}
             {:no_match, _} -> {[], :done}
@@ -554,7 +555,7 @@ defmodule OEIS do
   defp handle_oeis_response(nil), do: {:no_match, "No matches found."}
 
   # Case for when the OEIS API returns a list of results (general search).
-  defp handle_oeis_response(results) when is_list(results) and length(results) == 10 do
+  defp handle_oeis_response(results) when is_list(results) and length(results) == @oeis_page_size do
     # Include the raw results if desired
     {:partial, Enum.map(results, &map_to_sequence/1)}
   end
@@ -578,7 +579,12 @@ defmodule OEIS do
 
   defp map_to_sequence(result) do
     data = Map.get(result, "data", "")
-    {_ok, data_list} = normalize_sequence_to_list(data)
+
+    data_list =
+      case normalize_sequence_to_list(data) do
+        {:ok, list} -> list
+        _ -> []
+      end
 
     created =
       with created_str when is_binary(created_str) <- Map.get(result, "created"),
@@ -600,10 +606,18 @@ defmodule OEIS do
       result
       |> Map.get("keyword", "")
       |> String.split(",", trim: true)
+      |> Enum.reject(&(&1 == ""))
 
     offset =
       case Map.get(result, "offset", "") |> String.split(",", trim: true) do
-        [a, b] -> {String.to_integer(a), String.to_integer(b)}
+        [a, b] ->
+          with {a_int, ""} <- Integer.parse(a),
+               {b_int, ""} <- Integer.parse(b) do
+            {a_int, b_int}
+          else
+            _ -> nil
+          end
+
         _ -> nil
       end
 
